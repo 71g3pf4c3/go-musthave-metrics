@@ -1,39 +1,43 @@
-package handler
+package handlers
 
 import (
 	"net/http"
 	"strconv"
 
 	models "github.com/71g3pf4c3/go-musthave-metrics/internal/model"
-	"github.com/71g3pf4c3/go-musthave-metrics/internal/storage"
+	"github.com/71g3pf4c3/go-musthave-metrics/internal/repository"
 )
 
-type Handler struct {
-	store *storage.MemStorage
+type MetricsServer struct {
+	repository *repository.MemStorage
 }
 
-func New(s *storage.MemStorage) *Handler {
-	return &Handler{store: s}
+func NewMetricsServer(ms *repository.MemStorage) *MetricsServer {
+	return &MetricsServer{repository: ms}
 }
 
-func (h *Handler) Metrics(w http.ResponseWriter, r *http.Request) {
-	if r.Header.Get("Content-Type") != "text/plain" {
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte("unsupported content type"))
+func MainPageHandler(res http.ResponseWriter, req *http.Request) {
+	res.Write([]byte("Welcome to go-musthave-metrics!"))
+}
+
+func (ms *MetricsServer) UpdateHandler(res http.ResponseWriter, req *http.Request) {
+	if req.Header.Get("Content-Type") != "text/plain" {
+		res.WriteHeader(http.StatusBadRequest)
+		res.Write([]byte("unsupported content type"))
 		return
 	}
 
-	kind := r.PathValue("kind")
-	name := r.PathValue("name")
-	value := r.PathValue("value")
+	kind := req.PathValue("kind")
+	name := req.PathValue("name")
+	value := req.PathValue("value")
 
 	if name == "" {
-		w.WriteHeader(http.StatusBadRequest)
+		res.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
 	if value == "" {
-		w.WriteHeader(http.StatusBadRequest)
+		res.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
@@ -41,21 +45,23 @@ func (h *Handler) Metrics(w http.ResponseWriter, r *http.Request) {
 	case models.Gauge:
 		v, err := strconv.ParseFloat(value, 64)
 		if err != nil {
-			w.WriteHeader(http.StatusBadRequest)
+			res.Write([]byte("unsupported value type"))
+			res.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		h.store.SetGauge(name, v)
+		ms.repository.SetGauge(name, v)
 	case models.Counter:
 		v, err := strconv.ParseInt(value, 10, 64)
 		if err != nil {
-			w.WriteHeader(http.StatusBadRequest)
+			res.Write([]byte("unsupported value type"))
+			res.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		h.store.AddCounter(name, v)
+		ms.repository.AddCounter(name, v)
 	default:
-		w.WriteHeader(http.StatusBadRequest)
+		res.WriteHeader(http.StatusBadRequest)
+		res.Write([]byte("unsupported metric kind"))
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
 }
