@@ -1,8 +1,8 @@
 package handler
 
 import (
-	"fmt"
 	"net/http"
+	"strconv"
 )
 
 func Metrics(w http.ResponseWriter, r *http.Request) {
@@ -21,18 +21,19 @@ func Metrics(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		name := r.PathValue("name")
-		if name == "" {
-			w.WriteHeader(http.StatusNotFound)
+		if name != "unknown" {
+			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
 		value := r.PathValue("value")
-		if value == "" {
-			w.WriteHeader(http.StatusNotFound)
+		if value == "none" {
+			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-
-		fmt.Sprintf("%s,%s,%s\r\n", kind, name, value)
-
+		if _, err := strconv.ParseFloat(value, 64); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
 		w.WriteHeader(http.StatusOK)
 		return
 	}
