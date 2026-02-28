@@ -45,7 +45,6 @@ func (ms *MetricsServer) UpdateHandler(res http.ResponseWriter, req *http.Reques
 	case models.Gauge:
 		v, err := strconv.ParseFloat(value, 64)
 		if err != nil {
-			res.Write([]byte("unsupported value type"))
 			res.WriteHeader(http.StatusBadRequest)
 			return
 		}
@@ -53,14 +52,12 @@ func (ms *MetricsServer) UpdateHandler(res http.ResponseWriter, req *http.Reques
 	case models.Counter:
 		v, err := strconv.ParseInt(value, 10, 64)
 		if err != nil {
-			res.Write([]byte("unsupported value type"))
 			res.WriteHeader(http.StatusBadRequest)
 			return
 		}
 		ms.repository.AddCounter(name, v)
 	default:
 		res.WriteHeader(http.StatusBadRequest)
-		res.Write([]byte("unsupported metric kind"))
 		return
 	}
 
