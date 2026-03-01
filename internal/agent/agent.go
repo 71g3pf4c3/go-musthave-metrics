@@ -5,31 +5,36 @@ import (
 	"math/rand"
 	"net/http"
 	"runtime"
-	"sync"
+	"time"
 )
 
 type Agent struct {
-	client     *http.Client
-	serverAddr string
-	gauges     map[string]float64
-	pollCount  int64
-	mu         sync.Mutex
+	client         *http.Client
+	serverAddr     string
+	gauges         map[string]float64
+	pollCount      int64
+	pollInterval   int
+	reportInterval int
 }
 
-func New(serverAddr string) *Agent {
+type AgentConfig struct {
+	PollInterval   int
+	ReportInterval int
+}
+
+func New(serverAddr string, config AgentConfig) *Agent {
 	return &Agent{
-		client:     &http.Client{},
-		serverAddr: serverAddr,
-		gauges:     make(map[string]float64),
+		client:         &http.Client{},
+		serverAddr:     serverAddr,
+		gauges:         make(map[string]float64),
+		pollInterval:   config.PollInterval,
+		reportInterval: config.ReportInterval,
 	}
 }
 
 func (a *Agent) Collect() {
 	var ms runtime.MemStats
 	runtime.ReadMemStats(&ms)
-
-	a.mu.Lock()
-	defer a.mu.Unlock()
 
 	a.gauges["Alloc"] = float64(ms.Alloc)
 	a.gauges["BuckHashSys"] = float64(ms.BuckHashSys)
@@ -64,13 +69,11 @@ func (a *Agent) Collect() {
 }
 
 func (a *Agent) Report() {
-	a.mu.Lock()
 	gauges := make(map[string]float64, len(a.gauges))
 	for k, v := range a.gauges {
 		gauges[k] = v
 	}
 	pollCount := a.pollCount
-	a.mu.Unlock()
 
 	for name, value := range gauges {
 		url := fmt.Sprintf("%s/update/gauge/%s/%g", a.serverAddr, name, value)
@@ -93,4 +96,19 @@ func (a *Agent) sendMetric(url string) {
 		return
 	}
 	defer resp.Body.Close()
+}
+
+func (a *Agent) Run() {
+
+	go func() {
+		for {
+			a.Collect()
+			time.Sleep(time.Duration(a.pollInterval) * time.Second)
+		}
+	}()
+
+	for {
+		time.Sleep(time.Duration(a.reportInterval) * time.Second)
+		a.Report()
+	}
 }
