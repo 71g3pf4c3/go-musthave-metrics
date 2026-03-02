@@ -9,11 +9,10 @@ import (
 func main() {
 	addr := flag.String("a", "http://localhost:8080", "server endpoint address")
 	pollInterval := flag.Int("p", 2, "poll interval in seconds")
-	reportInterval := flag.Int("r", 10, "report interval in seconds")
+	reportInterval := flag.Int("r", 2, "report interval in seconds")
 	flag.Parse()
 
 	config := agent.AgentConfig{PollInterval: *pollInterval, ReportInterval: *reportInterval}
 	a := agent.New(*addr, config)
 	a.Run()
 }
-
