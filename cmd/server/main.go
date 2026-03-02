@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"net/http"
 	"time"
 
@@ -11,12 +12,9 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 )
 
-const (
-	ServerPort    = "8080"
-	ServerAddress = "localhost"
-)
-
 func main() {
+	addr := flag.String("a", "localhost:8080", "server listen address")
+	flag.Parse()
 
 	r := chi.NewRouter()
 	storage := repository.NewMemStorage()
@@ -32,8 +30,9 @@ func main() {
 	r.Get("/value/{kind}/{name}", ms.GetMetricHandler)
 	r.Post("/update/{kind}/{name}/{value}", ms.UpdateHandler)
 
-	err := http.ListenAndServe(ServerAddress+":"+ServerPort, r)
+	err := http.ListenAndServe(*addr, r)
 	if err != nil {
 		panic(err)
 	}
 }
+
