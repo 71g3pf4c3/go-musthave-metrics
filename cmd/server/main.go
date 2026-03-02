@@ -4,9 +4,8 @@ import (
 	"net/http"
 	"time"
 
-	_ "github.com/71g3pf4c3/go-musthave-metrics/internal/model"
-	repository "github.com/71g3pf4c3/go-musthave-metrics/internal/repository"
-	metrics "github.com/71g3pf4c3/go-musthave-metrics/internal/service"
+	"github.com/71g3pf4c3/go-musthave-metrics/internal/repository"
+	"github.com/71g3pf4c3/go-musthave-metrics/internal/service"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -21,7 +20,7 @@ func main() {
 
 	r := chi.NewRouter()
 	storage := repository.NewMemStorage()
-	server := metrics.NewMetricsServer(storage)
+	ms := service.NewMetricsServer(storage)
 
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
@@ -30,14 +29,9 @@ func main() {
 
 	r.Use(middleware.Timeout(60 * time.Second))
 
-	r.Route("/update", func(r chi.Router) {
-		r.Route("/{kind}/{name}", func(r chi.Router) {
-			// r.Get("/", getMetric)
-			r.Route("/{value}", func(r chi.Router) {
-				r.Post("/", server.UpdateHandler)
-			})
-		})
-	})
+	r.Get("/", ms.ListMetricsHandler)
+	r.Get("/value/{kind}/{name}", ms.GetMetricHandler)
+	r.Post("/update/{kind}/{name}/{value}", ms.UpdateHandler)
 
 	err := http.ListenAndServe(ServerAddress+":"+ServerPort, r)
 	if err != nil {
