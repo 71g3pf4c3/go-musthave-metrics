@@ -60,12 +60,6 @@ func (ms *MetricsServer) GetMetricHandler(res http.ResponseWriter, req *http.Req
 }
 
 func (ms *MetricsServer) UpdateHandler(res http.ResponseWriter, req *http.Request) {
-	if req.Header.Get("Content-Type") != "text/plain" {
-		res.WriteHeader(http.StatusBadRequest)
-		res.Write([]byte("unsupported content type"))
-		return
-	}
-
 	kind := req.PathValue("kind")
 	name := req.PathValue("name")
 	value := req.PathValue("value")

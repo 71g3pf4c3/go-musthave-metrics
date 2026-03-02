@@ -45,7 +45,7 @@ func TestAddCounterMetric(t *testing.T) {
 }
 
 func TestEmptyString(t *testing.T) {
-	// A request with no Content-Type header (empty string) must be rejected.
+	// Content-Type is not required; a valid update without it must return 200.
 	mux := newTestMux()
 	req := httptest.NewRequest(http.MethodPost, "/update/gauge/cpu/42.5", nil)
 	// Deliberately do NOT set Content-Type.
@@ -53,8 +53,8 @@ func TestEmptyString(t *testing.T) {
 
 	mux.ServeHTTP(w, req)
 
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("expected 400 for missing Content-Type, got %d", w.Code)
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200 for missing Content-Type, got %d", w.Code)
 	}
 }
 
