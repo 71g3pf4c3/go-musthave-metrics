@@ -5,6 +5,7 @@ import (
 	"math/rand"
 	"net/http"
 	"runtime"
+	"strings"
 	"time"
 )
 
@@ -23,6 +24,9 @@ type AgentConfig struct {
 }
 
 func New(serverAddr string, config AgentConfig) *Agent {
+	if !strings.HasPrefix(serverAddr, "http://") && !strings.HasPrefix(serverAddr, "https://") {
+		serverAddr = "http://" + serverAddr
+	}
 	return &Agent{
 		client:         &http.Client{},
 		serverAddr:     serverAddr,
