@@ -86,7 +86,7 @@ func (a *Agent) Report() {
 	pollCount := a.pollCount
 
 	for name, value := range gauges {
-		url := fmt.Sprintf("%s/update/gauge/%s/%g", a.serverAddr, name, value)
+		url := path.Join(a.serverAddr, "update/gauge", name, strconv.FormatFloat(value, 'f', 64, 64))
 		a.sendMetric(url)
 	}
 
