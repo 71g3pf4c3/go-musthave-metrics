@@ -95,7 +95,8 @@ func (a *Agent) Report() {
 }
 
 func (a *Agent) sendMetric(url string) {
-	req, err := http.NewRequest(http.MethodPost, url, nil)
+	a.m.Lock()
+	req, err := http.NewRequestWithContextewRequest(nil, http.MethodPost, url, nil)
 	if err != nil {
 		return
 	}
@@ -106,6 +107,7 @@ func (a *Agent) sendMetric(url string) {
 		return
 	}
 	defer resp.Body.Close()
+	a.m.Unlock()
 }
 
 func (a *Agent) Run() {
