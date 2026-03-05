@@ -4,8 +4,11 @@ import (
 	"fmt"
 	"math/rand"
 	"net/http"
+	"path"
 	"runtime"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -16,6 +19,7 @@ type Agent struct {
 	pollCount      int64
 	pollInterval   int
 	reportInterval int
+	m              sync.Mutex
 }
 
 type AgentConfig struct {
@@ -37,6 +41,7 @@ func New(serverAddr string, config AgentConfig) *Agent {
 }
 
 func (a *Agent) Collect() {
+	a.m.Lock()
 	var ms runtime.MemStats
 	runtime.ReadMemStats(&ms)
 
@@ -70,6 +75,7 @@ func (a *Agent) Collect() {
 	a.gauges["RandomValue"] = rand.Float64()
 
 	a.pollCount++
+	a.m.Unlock()
 }
 
 func (a *Agent) Report() {
