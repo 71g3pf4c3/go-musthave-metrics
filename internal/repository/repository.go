@@ -3,6 +3,7 @@ package repository
 import (
 	"fmt"
 	"strconv"
+	"sync"
 
 	models "github.com/71g3pf4c3/go-musthave-metrics/internal/model"
 )
@@ -18,6 +19,7 @@ type Repository interface {
 type MemStorage struct {
 	gauge   map[string]float64
 	counter map[string]int64
+	m       sync.Mutex
 }
 
 func NewMemStorage() *MemStorage {
@@ -28,7 +30,9 @@ func NewMemStorage() *MemStorage {
 }
 
 func (ms *MemStorage) AddCounter(key string, value int64) {
+	ms.m.Lock()
 	ms.counter[key] += value
+	ms.m.Unlock()
 }
 
 func (ms *MemStorage) GetAllGauge() map[string]float64 {
@@ -40,7 +44,9 @@ func (ms *MemStorage) GetAllCounter() map[string]int64 {
 }
 
 func (ms *MemStorage) SetGauge(key string, value float64) {
+	ms.m.Lock()
 	ms.gauge[key] = value
+	ms.m.Unlock()
 }
 
 var ErrNotFound = fmt.Errorf("ErrNotFound")
