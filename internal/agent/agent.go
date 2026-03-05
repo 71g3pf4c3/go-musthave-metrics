@@ -109,16 +109,18 @@ func (a *Agent) sendMetric(url string) {
 }
 
 func (a *Agent) Run() {
-
+	pollTicker := time.NewTicker(time.Duration(a.pollInterval) * time.Second)
+	reportTicker := time.NewTicker(time.Duration(a.reportInterval) * time.Second)
+	defer pollTicker.Stop()
+	defer reportTicker.Stop()
 	go func() {
 		for {
-			a.Collect()
-			time.Sleep(time.Duration(a.pollInterval) * time.Second)
+			select {
+			case <-pollTicker.C:
+				a.Collect()
+			case <-reportTicker.C:
+				a.Report()
+			}
 		}
 	}()
-
-	for {
-		time.Sleep(time.Duration(a.reportInterval) * time.Second)
-		a.Report()
-	}
 }
