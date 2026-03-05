@@ -3,17 +3,17 @@ package agent
 import (
 	"fmt"
 	"math/rand"
-	"net/http"
-	"path"
 	"runtime"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"resty.dev/v3"
 )
 
 type Agent struct {
-	client         *http.Client
+	client         *resty.Client
 	serverAddr     string
 	gauges         map[string]float64
 	pollCount      int64
@@ -32,7 +32,7 @@ func New(serverAddr string, config AgentConfig) *Agent {
 		serverAddr = "http://" + serverAddr
 	}
 	return &Agent{
-		client:         &http.Client{},
+		client:         resty.New(),
 		serverAddr:     serverAddr,
 		gauges:         make(map[string]float64),
 		pollInterval:   config.PollInterval,
@@ -79,35 +79,32 @@ func (a *Agent) Collect() {
 }
 
 func (a *Agent) Report() {
+	a.m.Lock()
 	gauges := make(map[string]float64, len(a.gauges))
 	for k, v := range a.gauges {
 		gauges[k] = v
 	}
 	pollCount := a.pollCount
+	a.m.Unlock()
 
 	for name, value := range gauges {
-		url := path.Join(a.serverAddr, "update/gauge", name, strconv.FormatFloat(value, 'f', 64, 64))
-		a.sendMetric(url)
+		url := fmt.Sprintf("%s/update/gauge/%s/%s", a.serverAddr, name, strconv.FormatFloat(value, 'f', -1, 64))
+		if err := a.sendMetric(url); err != nil {
+			fmt.Printf("send gauge %s: %v\n", name, err)
+		}
 	}
 
 	url := fmt.Sprintf("%s/update/counter/PollCount/%d", a.serverAddr, pollCount)
-	a.sendMetric(url)
+	if err := a.sendMetric(url); err != nil {
+		fmt.Printf("send counter PollCount: %v\n", err)
+	}
 }
 
-func (a *Agent) sendMetric(url string) {
-	a.m.Lock()
-	req, err := http.NewRequestWithContext(nil, http.MethodPost, url, nil)
-	if err != nil {
-		return
-	}
-	req.Header.Set("Content-Type", "text/plain")
-
-	resp, err := a.client.Do(req)
-	if err != nil {
-		return
-	}
-	defer resp.Body.Close()
-	a.m.Unlock()
+func (a *Agent) sendMetric(url string) error {
+	_, err := a.client.R().
+		SetHeader("Content-Type", "text/plain").
+		Post(url)
+	return err
 }
 
 func (a *Agent) Run() {
