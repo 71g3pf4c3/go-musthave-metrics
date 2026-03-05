@@ -96,7 +96,7 @@ func (a *Agent) Report() {
 
 func (a *Agent) sendMetric(url string) {
 	a.m.Lock()
-	req, err := http.NewRequestWithContextewRequest(nil, http.MethodPost, url, nil)
+	req, err := http.NewRequestWithContext(nil, http.MethodPost, url, nil)
 	if err != nil {
 		return
 	}
