@@ -30,9 +30,15 @@ func main() {
 	r.Get("/value/{kind}/{name}", ms.GetMetricHandler)
 	r.Post("/update/{kind}/{name}/{value}", ms.UpdateHandler)
 
-	err := http.ListenAndServe(*addr, r)
-	if err != nil {
+	srv := &http.Server{
+		Addr:         *addr,
+		Handler:      r,
+		ReadTimeout:  5 * time.Second,
+		WriteTimeout: 10 * time.Second,
+		IdleTimeout:  120 * time.Second,
+	}
+
+	if err := srv.ListenAndServe(); err != nil {
 		panic(err)
 	}
 }
-
