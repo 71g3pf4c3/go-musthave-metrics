@@ -112,14 +112,12 @@ func (a *Agent) Run() {
 	reportTicker := time.NewTicker(time.Duration(a.reportInterval) * time.Second)
 	defer pollTicker.Stop()
 	defer reportTicker.Stop()
-	go func() {
-		for {
-			select {
-			case <-pollTicker.C:
-				a.Collect()
-			case <-reportTicker.C:
-				a.Report()
-			}
+	for {
+		select {
+		case <-pollTicker.C:
+			a.Collect()
+		case <-reportTicker.C:
+			a.Report()
 		}
-	}()
+	}
 }
