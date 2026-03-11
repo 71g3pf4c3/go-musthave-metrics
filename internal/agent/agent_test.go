@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/agent"
+	"github.com/71g3pf4c3/go-musthave-metrics/internal/config"
 )
 
 var expectedGaugeNames = []string{
@@ -35,7 +36,7 @@ func TestCollectAndReport_AllMetricsSent(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	a := agent.New(srv.URL, agent.AgentConfig{PollInterval: 2, ReportInterval: 10})
+	a := agent.New(config.AgentConfig{Address: srv.URL, PollInterval: 2, ReportInterval: 10})
 	a.Collect()
 	a.Report()
 
@@ -79,7 +80,7 @@ func TestCollectAndReport_ContentTypeIsTextPlain(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	a := agent.New(srv.URL, agent.AgentConfig{PollInterval: 2, ReportInterval: 10})
+	a := agent.New(config.AgentConfig{Address: srv.URL, PollInterval: 2, ReportInterval: 10})
 	a.Collect()
 	a.Report()
 
@@ -102,7 +103,7 @@ func TestCollectAndReport_MethodIsPost(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	a := agent.New(srv.URL, agent.AgentConfig{PollInterval: 2, ReportInterval: 10})
+	a := agent.New(config.AgentConfig{Address: srv.URL, PollInterval: 2, ReportInterval: 10})
 	a.Collect()
 	a.Report()
 
@@ -123,7 +124,7 @@ func TestReport_PollCountIncrementsEachCollect(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	a := agent.New(srv.URL, agent.AgentConfig{PollInterval: 2, ReportInterval: 10})
+	a := agent.New(config.AgentConfig{Address: srv.URL, PollInterval: 2, ReportInterval: 10})
 	a.Collect()
 	a.Collect()
 	a.Collect()
@@ -153,7 +154,7 @@ func TestReport_URLFormat(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	a := agent.New(srv.URL, agent.AgentConfig{PollInterval: 2, ReportInterval: 10})
+	a := agent.New(config.AgentConfig{Address: srv.URL, PollInterval: 2, ReportInterval: 10})
 	a.Collect()
 	a.Report()
 
