@@ -37,16 +37,11 @@ func NewAgentConfig() *AgentConfig {
 
 func NewServerConfig() *ServerConfig {
 
-	addressFlag := flag.String("a", "http://localhost:8080", "server endpoint address")
+	addressFlag := flag.String("a", "localhost:8080", "server listen address")
 	flag.Parse()
 
-	address := *addressFlag
-
-	if !strings.HasPrefix(address, "http://") && !strings.HasPrefix(address, "https://") {
-		address = "http://" + address
-	}
 	return &ServerConfig{
-		Address: address,
+		Address: *addressFlag,
 	}
 
 }
