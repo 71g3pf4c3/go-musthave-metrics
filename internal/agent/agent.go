@@ -5,10 +5,10 @@ import (
 	"math/rand"
 	"runtime"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
+	"github.com/71g3pf4c3/go-musthave-metrics/internal/config"
 	"resty.dev/v3"
 )
 
@@ -22,18 +22,10 @@ type Agent struct {
 	m              sync.Mutex
 }
 
-type AgentConfig struct {
-	PollInterval   int
-	ReportInterval int
-}
-
-func New(serverAddr string, config AgentConfig) *Agent {
-	if !strings.HasPrefix(serverAddr, "http://") && !strings.HasPrefix(serverAddr, "https://") {
-		serverAddr = "http://" + serverAddr
-	}
+func New(config config.AgentConfig) *Agent {
 	return &Agent{
 		client:         resty.New(),
-		serverAddr:     serverAddr,
+		serverAddr:     config.Address,
 		gauges:         make(map[string]float64),
 		pollInterval:   config.PollInterval,
 		reportInterval: config.ReportInterval,

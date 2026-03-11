@@ -1,10 +1,10 @@
 package main
 
 import (
-	"flag"
 	"net/http"
 	"time"
 
+	"github.com/71g3pf4c3/go-musthave-metrics/internal/config"
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/repository"
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/service"
 
@@ -13,8 +13,7 @@ import (
 )
 
 func main() {
-	addr := flag.String("a", "localhost:8080", "server listen address")
-	flag.Parse()
+	cfg := config.NewServerConfig()
 
 	r := chi.NewRouter()
 	storage := repository.NewMemStorage()
@@ -31,7 +30,7 @@ func main() {
 	r.Post("/update/{kind}/{name}/{value}", ms.UpdateHandler)
 
 	srv := &http.Server{
-		Addr:         *addr,
+		Addr:         cfg.Address,
 		Handler:      r,
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,
