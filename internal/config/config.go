@@ -18,14 +18,15 @@ type ServerConfig struct {
 func NewAgentConfig() *AgentConfig {
 
 	addressFlag := flag.String("a", "http://localhost:8080", "server endpoint address")
+	pollInterval := flag.Int("p", 2, "poll interval in seconds")
+	reportInterval := flag.Int("r", 2, "report interval in seconds")
+	flag.Parse()
+
 	address := *addressFlag
 
 	if !strings.HasPrefix(address, "http://") && !strings.HasPrefix(address, "https://") {
 		address = "http://" + address
 	}
-	pollInterval := flag.Int("p", 2, "poll interval in seconds")
-	reportInterval := flag.Int("r", 2, "report interval in seconds")
-	flag.Parse()
 	return &AgentConfig{
 		Address:        address,
 		PollInterval:   *pollInterval,
@@ -36,10 +37,16 @@ func NewAgentConfig() *AgentConfig {
 
 func NewServerConfig() *ServerConfig {
 
-	address := flag.String("a", "http://localhost:8080", "server endpoint address")
+	addressFlag := flag.String("a", "http://localhost:8080", "server endpoint address")
 	flag.Parse()
+
+	address := *addressFlag
+
+	if !strings.HasPrefix(address, "http://") && !strings.HasPrefix(address, "https://") {
+		address = "http://" + address
+	}
 	return &ServerConfig{
-		Address: *address,
+		Address: address,
 	}
 
 }
