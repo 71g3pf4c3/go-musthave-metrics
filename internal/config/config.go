@@ -2,46 +2,70 @@ package config
 
 import (
 	"flag"
+	"log"
 	"strings"
+
+	"github.com/caarlos0/env/v6"
 )
 
 type AgentConfig struct {
-	Address        string
-	PollInterval   int
-	ReportInterval int
+	Address        string `env:"ADDRESS"`
+	PollInterval   int    `env:"POLL_INTERVAL"`
+	ReportInterval int    `env:"REPORT_INTERVAL"`
 }
 
 type ServerConfig struct {
-	Address string
+	Address string `env:"ADDRESS"`
 }
 
 func NewAgentConfig() *AgentConfig {
-
-	addressFlag := flag.String("a", "http://localhost:8080", "server endpoint address")
+	addressFlag := flag.String("a", "localhost:8080", "server endpoint address")
 	pollInterval := flag.Int("p", 2, "poll interval in seconds")
-	reportInterval := flag.Int("r", 2, "report interval in seconds")
+	reportInterval := flag.Int("r", 10, "report interval in seconds")
 	flag.Parse()
 
-	address := *addressFlag
-
-	if !strings.HasPrefix(address, "http://") && !strings.HasPrefix(address, "https://") {
-		address = "http://" + address
-	}
-	return &AgentConfig{
-		Address:        address,
+	cfg := AgentConfig{
+		Address:        *addressFlag,
 		PollInterval:   *pollInterval,
 		ReportInterval: *reportInterval,
 	}
 
+	var envCfg AgentConfig
+	if err := env.Parse(&envCfg); err != nil {
+		log.Fatal(err)
+	}
+	if envCfg.Address != "" {
+		cfg.Address = envCfg.Address
+	}
+	if envCfg.PollInterval != 0 {
+		cfg.PollInterval = envCfg.PollInterval
+	}
+	if envCfg.ReportInterval != 0 {
+		cfg.ReportInterval = envCfg.ReportInterval
+	}
+
+	if !strings.HasPrefix(cfg.Address, "http://") && !strings.HasPrefix(cfg.Address, "https://") {
+		cfg.Address = "http://" + cfg.Address
+	}
+
+	return &cfg
 }
 
 func NewServerConfig() *ServerConfig {
-
 	addressFlag := flag.String("a", "localhost:8080", "server listen address")
 	flag.Parse()
 
-	return &ServerConfig{
+	cfg := ServerConfig{
 		Address: *addressFlag,
 	}
 
+	var envCfg ServerConfig
+	if err := env.Parse(&envCfg); err != nil {
+		log.Fatal(err)
+	}
+	if envCfg.Address != "" {
+		cfg.Address = envCfg.Address
+	}
+
+	return &cfg
 }
