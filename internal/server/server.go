@@ -1,11 +1,13 @@
 package server
 
 import (
+	"log"
 	"net/http"
 	"time"
 
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/config"
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/handlers"
+	"github.com/71g3pf4c3/go-musthave-metrics/internal/logger"
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/repository"
 
 	"github.com/go-chi/chi/v5"
@@ -18,6 +20,11 @@ func New(cfg *config.ServerConfig) *http.Server {
 
 	r := chi.NewRouter()
 
+	if err := logger.Initialize(cfg.LogLevel); err != nil {
+		log.Fatalf("failed to initialize logger: %v", err)
+	}
+
+	r.Use(logger.RequestLogger)
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)

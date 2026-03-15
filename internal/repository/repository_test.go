@@ -3,7 +3,7 @@ package repository
 import (
 	"testing"
 
-	models "github.com/71g3pf4c3/go-musthave-metrics/internal/model"
+	"github.com/71g3pf4c3/go-musthave-metrics/internal/models"
 )
 
 func TestNewStorage(t *testing.T) {

@@ -15,7 +15,8 @@ type AgentConfig struct {
 }
 
 type ServerConfig struct {
-	Address string `env:"ADDRESS"`
+	Address  string `env:"ADDRESS"`
+	LogLevel string `env:"LOG_LEVEL"`
 }
 
 func NewAgentConfig() *AgentConfig {
@@ -53,10 +54,12 @@ func NewAgentConfig() *AgentConfig {
 
 func NewServerConfig() *ServerConfig {
 	addressFlag := flag.String("a", "localhost:8080", "server listen address")
+	logLevel := flag.String("l", "info", "server log level")
 	flag.Parse()
 
 	cfg := ServerConfig{
-		Address: *addressFlag,
+		Address:  *addressFlag,
+		LogLevel: *logLevel,
 	}
 
 	var envCfg ServerConfig
@@ -65,6 +68,9 @@ func NewServerConfig() *ServerConfig {
 	}
 	if envCfg.Address != "" {
 		cfg.Address = envCfg.Address
+	}
+	if envCfg.LogLevel != "" {
+		cfg.LogLevel = envCfg.LogLevel
 	}
 
 	return &cfg
