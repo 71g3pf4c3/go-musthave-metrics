@@ -1,4 +1,4 @@
-package service
+package handlers
 
 import (
 	"errors"
@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strconv"
 
-	models "github.com/71g3pf4c3/go-musthave-metrics/internal/model"
+	"github.com/71g3pf4c3/go-musthave-metrics/internal/models"
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/repository"
 )
 
@@ -16,6 +16,10 @@ type MetricsServer struct {
 
 func NewMetricsServer(ms *repository.MemStorage) *MetricsServer {
 	return &MetricsServer{repository: ms}
+}
+
+func MainPageHandler(res http.ResponseWriter, req *http.Request) {
+	res.Write([]byte("Welcome to go-musthave-metrics!"))
 }
 
 func (ms *MetricsServer) ListMetricsHandler(res http.ResponseWriter, req *http.Request) {

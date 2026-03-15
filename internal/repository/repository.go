@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"sync"
 
-	models "github.com/71g3pf4c3/go-musthave-metrics/internal/model"
+	"github.com/71g3pf4c3/go-musthave-metrics/internal/models"
 )
 
 type Repository interface {
