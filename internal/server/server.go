@@ -30,6 +30,8 @@ func New(cfg *config.ServerConfig) *http.Server {
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(60 * time.Second))
 
+	r.Use(middleware.StripSlashes)
+
 	r.Get("/", ms.ListHandler)
 	r.Get("/value/{kind}/{name}", ms.GetHandler)
 	r.Post("/update/{kind}/{name}/{value}", ms.UpdateHandler)
