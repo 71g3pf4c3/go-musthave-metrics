@@ -12,6 +12,8 @@ type Repository interface {
 	AddCounter(key string, value int64)
 	SetGauge(key string, value float64)
 	GetValue(key string) (string, error)
+	GetGauge(key string) (float64, error)
+	GetCounter(key string) (int64, error)
 	GetAllGauge() (map[string]float64, error)
 	GetAllCounter() (map[string]int64, error)
 }
@@ -65,4 +67,18 @@ func (ms *MemStorage) GetValue(name string, kind string) (string, error) {
 		return "", ErrNotFound
 	}
 	return "", fmt.Errorf("UnexpectedError")
+}
+
+func (ms *MemStorage) GetGauge(name string) (float64, error) {
+	if value, ok := ms.gauge[name]; ok {
+		return value, nil
+	}
+	return 0, ErrNotFound
+}
+
+func (ms *MemStorage) GetCounter(name string) (int64, error) {
+	if value, ok := ms.counter[name]; ok {
+		return value, nil
+	}
+	return 0, ErrNotFound
 }

@@ -2,13 +2,14 @@ package agent
 
 import (
 	"fmt"
+	"maps"
 	"math/rand"
 	"runtime"
-	"strconv"
 	"sync"
 	"time"
 
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/config"
+	"github.com/71g3pf4c3/go-musthave-metrics/internal/models"
 	"resty.dev/v3"
 )
 
@@ -73,29 +74,37 @@ func (a *Agent) Collect() {
 func (a *Agent) Report() {
 	a.m.Lock()
 	gauges := make(map[string]float64, len(a.gauges))
-	for k, v := range a.gauges {
-		gauges[k] = v
-	}
+	maps.Copy(gauges, a.gauges)
 	pollCount := a.pollCount
 	a.m.Unlock()
 
 	for name, value := range gauges {
-		url := fmt.Sprintf("%s/update/gauge/%s/%s", a.serverAddr, name, strconv.FormatFloat(value, 'f', -1, 64))
-		if err := a.sendMetric(url); err != nil {
+		v := value
+		metric := models.Metrics{
+			ID:    name,
+			MType: models.Gauge,
+			Value: &v,
+		}
+		if err := a.sendMetric(metric); err != nil {
 			fmt.Printf("send gauge %s: %v\n", name, err)
 		}
 	}
 
-	url := fmt.Sprintf("%s/update/counter/PollCount/%d", a.serverAddr, pollCount)
-	if err := a.sendMetric(url); err != nil {
+	metric := models.Metrics{
+		ID:    "PollCount",
+		MType: models.Counter,
+		Delta: &pollCount,
+	}
+	if err := a.sendMetric(metric); err != nil {
 		fmt.Printf("send counter PollCount: %v\n", err)
 	}
 }
 
-func (a *Agent) sendMetric(url string) error {
+func (a *Agent) sendMetric(metric models.Metrics) error {
 	_, err := a.client.R().
-		SetHeader("Content-Type", "text/plain").
-		Post(url)
+		SetHeader("Content-Type", "application/json").
+		SetBody(metric).
+		Post(fmt.Sprintf("%s/update", a.serverAddr))
 	return err
 }
 

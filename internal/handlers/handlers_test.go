@@ -1,14 +1,37 @@
 package handlers_test
 
 import (
+	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/handlers"
+	"github.com/71g3pf4c3/go-musthave-metrics/internal/models"
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/repository"
 )
+
+// errorResponseWriter is an http.ResponseWriter whose Write always fails.
+// It lets tests exercise the enc.Encode error branches in JsonGetHandler.
+type errorResponseWriter struct {
+	header http.Header
+	code   int
+}
+
+func (e *errorResponseWriter) Header() http.Header {
+	if e.header == nil {
+		e.header = make(http.Header)
+	}
+	return e.header
+}
+
+func (e *errorResponseWriter) Write([]byte) (int, error) {
+	return 0, errors.New("simulated write failure")
+}
+
+func (e *errorResponseWriter) WriteHeader(statusCode int) { e.code = statusCode }
 
 func newHandler() *handlers.MetricsServer {
 	return handlers.NewMetricsServer(repository.NewMemStorage())
@@ -30,11 +53,23 @@ func makeGetRequest(kind, name string) *http.Request {
 	return req
 }
 
-// --- ListMetricsHandler ---
+func makeJsonUpdateRequest(body string) *http.Request {
+	req := httptest.NewRequest(http.MethodPost, "/update", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	return req
+}
 
-func TestListMetricsHandlerEmpty(t *testing.T) {
+func makeJsonGetRequest(body string) *http.Request {
+	req := httptest.NewRequest(http.MethodGet, "/value", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	return req
+}
+
+// --- ListHandler ---
+
+func TestListHandlerEmpty(t *testing.T) {
 	w := httptest.NewRecorder()
-	newHandler().ListMetricsHandler(w, httptest.NewRequest(http.MethodGet, "/", nil))
+	newHandler().ListHandler(w, httptest.NewRequest(http.MethodGet, "/", nil))
 	if w.Code != http.StatusOK {
 		t.Errorf("expected 200, got %d", w.Code)
 	}
@@ -43,12 +78,12 @@ func TestListMetricsHandlerEmpty(t *testing.T) {
 	}
 }
 
-func TestListMetricsHandlerGauge(t *testing.T) {
+func TestListHandlerGauge(t *testing.T) {
 	h := newHandler()
 	h.UpdateHandler(httptest.NewRecorder(), makeRequest("gauge", "cpu", "42.5"))
 
 	w := httptest.NewRecorder()
-	h.ListMetricsHandler(w, httptest.NewRequest(http.MethodGet, "/", nil))
+	h.ListHandler(w, httptest.NewRequest(http.MethodGet, "/", nil))
 	if w.Code != http.StatusOK {
 		t.Errorf("expected 200, got %d", w.Code)
 	}
@@ -60,13 +95,13 @@ func TestListMetricsHandlerGauge(t *testing.T) {
 	}
 }
 
-func TestListMetricsHandlerCounter(t *testing.T) {
+func TestListHandlerCounter(t *testing.T) {
 	h := newHandler()
 	h.UpdateHandler(httptest.NewRecorder(), makeRequest("counter", "hits", "10"))
 	h.UpdateHandler(httptest.NewRecorder(), makeRequest("counter", "hits", "5"))
 
 	w := httptest.NewRecorder()
-	h.ListMetricsHandler(w, httptest.NewRequest(http.MethodGet, "/", nil))
+	h.ListHandler(w, httptest.NewRequest(http.MethodGet, "/", nil))
 	if w.Code != http.StatusOK {
 		t.Errorf("expected 200, got %d", w.Code)
 	}
@@ -78,13 +113,13 @@ func TestListMetricsHandlerCounter(t *testing.T) {
 	}
 }
 
-func TestListMetricsHandlerBoth(t *testing.T) {
+func TestListHandlerBoth(t *testing.T) {
 	h := newHandler()
 	h.UpdateHandler(httptest.NewRecorder(), makeRequest("gauge", "mem", "1.5"))
 	h.UpdateHandler(httptest.NewRecorder(), makeRequest("counter", "reqs", "7"))
 
 	w := httptest.NewRecorder()
-	h.ListMetricsHandler(w, httptest.NewRequest(http.MethodGet, "/", nil))
+	h.ListHandler(w, httptest.NewRequest(http.MethodGet, "/", nil))
 	body := w.Body.String()
 	for _, want := range []string{"mem", "1.5", "reqs", "7"} {
 		if !strings.Contains(body, want) {
@@ -172,14 +207,14 @@ func TestUpdateHandlerAddGaugeFloat32(t *testing.T) {
 	}
 }
 
-// --- GetMetricHandler: GetValue via HTTP ---
+// --- GetHandler ---
 
-func TestGetMetricHandlerGauge(t *testing.T) {
+func TestGetHandlerGauge(t *testing.T) {
 	h := newHandler()
 	h.UpdateHandler(httptest.NewRecorder(), makeRequest("gauge", "cpu", "42.5"))
 
 	w := httptest.NewRecorder()
-	h.GetMetricHandler(w, makeGetRequest("gauge", "cpu"))
+	h.GetHandler(w, makeGetRequest("gauge", "cpu"))
 	if w.Code != http.StatusOK {
 		t.Errorf("expected 200, got %d", w.Code)
 	}
@@ -188,13 +223,13 @@ func TestGetMetricHandlerGauge(t *testing.T) {
 	}
 }
 
-func TestGetMetricHandlerCounter(t *testing.T) {
+func TestGetHandlerCounter(t *testing.T) {
 	h := newHandler()
 	h.UpdateHandler(httptest.NewRecorder(), makeRequest("counter", "hits", "10"))
 	h.UpdateHandler(httptest.NewRecorder(), makeRequest("counter", "hits", "5"))
 
 	w := httptest.NewRecorder()
-	h.GetMetricHandler(w, makeGetRequest("counter", "hits"))
+	h.GetHandler(w, makeGetRequest("counter", "hits"))
 	if w.Code != http.StatusOK {
 		t.Errorf("expected 200, got %d", w.Code)
 	}
@@ -203,33 +238,80 @@ func TestGetMetricHandlerCounter(t *testing.T) {
 	}
 }
 
-func TestGetMetricHandlerNotFound(t *testing.T) {
+func TestGetHandlerNotFound(t *testing.T) {
 	h := newHandler()
 
 	w := httptest.NewRecorder()
-	h.GetMetricHandler(w, makeGetRequest("gauge", "nonexistent"))
+	h.GetHandler(w, makeGetRequest("gauge", "nonexistent"))
 	if w.Code != http.StatusNotFound {
 		t.Errorf("expected 404, got %d", w.Code)
 	}
 }
 
-func TestGetMetricHandlerUnknownKind(t *testing.T) {
+func TestGetHandlerUnknownKind(t *testing.T) {
 	h := newHandler()
 
 	w := httptest.NewRecorder()
-	h.GetMetricHandler(w, makeGetRequest("histogram", "cpu"))
+	h.GetHandler(w, makeGetRequest("histogram", "cpu"))
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected 400, got %d", w.Code)
 	}
 }
 
-func TestGetMetricHandlerMissingName(t *testing.T) {
+func TestGetHandlerMissingName(t *testing.T) {
 	h := newHandler()
 
 	w := httptest.NewRecorder()
-	h.GetMetricHandler(w, makeGetRequest("gauge", ""))
+	h.GetHandler(w, makeGetRequest("gauge", ""))
 	if w.Code != http.StatusNotFound {
 		t.Errorf("expected 404, got %d", w.Code)
+	}
+}
+
+// --- UpdateHandler: missing path-value branches ---
+
+func TestUpdateHandlerUnknownKind(t *testing.T) {
+	w := httptest.NewRecorder()
+	newHandler().UpdateHandler(w, makeRequest("histogram", "latency", "0.5"))
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for unknown kind, got %d", w.Code)
+	}
+}
+
+func TestUpdateHandlerEmptyName(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/update/gauge//42.5", nil)
+	req.SetPathValue("kind", "gauge")
+	req.SetPathValue("name", "")
+	req.SetPathValue("value", "42.5")
+	w := httptest.NewRecorder()
+	newHandler().UpdateHandler(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for empty name, got %d", w.Code)
+	}
+}
+
+func TestUpdateHandlerEmptyValue(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/update/gauge/cpu/", nil)
+	req.SetPathValue("kind", "gauge")
+	req.SetPathValue("name", "cpu")
+	req.SetPathValue("value", "")
+	w := httptest.NewRecorder()
+	newHandler().UpdateHandler(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for empty value, got %d", w.Code)
+	}
+}
+
+// --- MainPageHandler ---
+
+func TestMainPageHandler(t *testing.T) {
+	w := httptest.NewRecorder()
+	handlers.MainPageHandler(w, httptest.NewRequest(http.MethodGet, "/", nil))
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+	if w.Body.Len() == 0 {
+		t.Error("expected non-empty body")
 	}
 }
 
@@ -240,5 +322,286 @@ func TestUpdateHandlerAddGaugeString(t *testing.T) {
 	newHandler().UpdateHandler(w, makeRequest("gauge", "cpu", "abc"))
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected 400 for string gauge value, got %d", w.Code)
+	}
+}
+
+// --- JsonUpdateHandler ---
+
+func TestJsonUpdateHandlerGauge(t *testing.T) {
+	h := newHandler()
+	v := 42.5
+	m := models.Metrics{ID: "cpu", MType: models.Gauge, Value: &v}
+	body, _ := json.Marshal(m)
+
+	w := httptest.NewRecorder()
+	h.JsonUpdateHandler(w, makeJsonUpdateRequest(string(body)))
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+
+	// Verify value was stored by reading it back.
+	rw := httptest.NewRecorder()
+	h.GetHandler(rw, makeGetRequest("gauge", "cpu"))
+	if rw.Body.String() != "42.5" {
+		t.Errorf("expected stored gauge \"42.5\", got %q", rw.Body.String())
+	}
+}
+
+func TestJsonUpdateHandlerCounter(t *testing.T) {
+	h := newHandler()
+	var delta int64 = 10
+	m := models.Metrics{ID: "hits", MType: models.Counter, Delta: &delta}
+	body, _ := json.Marshal(m)
+
+	w := httptest.NewRecorder()
+	h.JsonUpdateHandler(w, makeJsonUpdateRequest(string(body)))
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+
+	// Verify value was stored.
+	rw := httptest.NewRecorder()
+	h.GetHandler(rw, makeGetRequest("counter", "hits"))
+	if rw.Body.String() != "10" {
+		t.Errorf("expected stored counter \"10\", got %q", rw.Body.String())
+	}
+}
+
+func TestJsonUpdateHandlerCounterAccumulates(t *testing.T) {
+	h := newHandler()
+
+	for _, delta := range []int64{10, 5} {
+		d := delta
+		m := models.Metrics{ID: "hits", MType: models.Counter, Delta: &d}
+		body, _ := json.Marshal(m)
+		h.JsonUpdateHandler(httptest.NewRecorder(), makeJsonUpdateRequest(string(body)))
+	}
+
+	rw := httptest.NewRecorder()
+	h.GetHandler(rw, makeGetRequest("counter", "hits"))
+	if rw.Body.String() != "15" {
+		t.Errorf("expected accumulated counter \"15\", got %q", rw.Body.String())
+	}
+}
+
+func TestJsonUpdateHandlerGaugeOverrides(t *testing.T) {
+	h := newHandler()
+
+	for _, v := range []float64{1.0, 99.9} {
+		val := v
+		m := models.Metrics{ID: "cpu", MType: models.Gauge, Value: &val}
+		body, _ := json.Marshal(m)
+		h.JsonUpdateHandler(httptest.NewRecorder(), makeJsonUpdateRequest(string(body)))
+	}
+
+	rw := httptest.NewRecorder()
+	h.GetHandler(rw, makeGetRequest("gauge", "cpu"))
+	if rw.Body.String() != "99.9" {
+		t.Errorf("expected overwritten gauge \"99.9\", got %q", rw.Body.String())
+	}
+}
+
+func TestJsonUpdateHandlerBadMethod(t *testing.T) {
+	h := newHandler()
+	v := 1.0
+	m := models.Metrics{ID: "cpu", MType: models.Gauge, Value: &v}
+	body, _ := json.Marshal(m)
+
+	req := httptest.NewRequest(http.MethodGet, "/update", strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	h.JsonUpdateHandler(w, req)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Errorf("expected 405 for GET on JsonUpdateHandler, got %d", w.Code)
+	}
+}
+
+func TestJsonUpdateHandlerInvalidJSON(t *testing.T) {
+	h := newHandler()
+
+	w := httptest.NewRecorder()
+	h.JsonUpdateHandler(w, makeJsonUpdateRequest("not-json"))
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500 for invalid JSON, got %d", w.Code)
+	}
+}
+
+func TestJsonUpdateHandlerUnknownType(t *testing.T) {
+	h := newHandler()
+	m := models.Metrics{ID: "latency", MType: "histogram"}
+	body, _ := json.Marshal(m)
+
+	w := httptest.NewRecorder()
+	h.JsonUpdateHandler(w, makeJsonUpdateRequest(string(body)))
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for unknown metric type, got %d", w.Code)
+	}
+}
+
+// --- JsonGetHandler ---
+
+func TestJsonGetHandlerGauge(t *testing.T) {
+	h := newHandler()
+	v := 42.5
+	// Store the gauge first via JsonUpdateHandler.
+	upd := models.Metrics{ID: "cpu", MType: models.Gauge, Value: &v}
+	updBody, _ := json.Marshal(upd)
+	h.JsonUpdateHandler(httptest.NewRecorder(), makeJsonUpdateRequest(string(updBody)))
+
+	// Now retrieve it.
+	get := models.Metrics{ID: "cpu", MType: models.Gauge}
+	getBody, _ := json.Marshal(get)
+	w := httptest.NewRecorder()
+	h.JsonGetHandler(w, makeJsonGetRequest(string(getBody)))
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+
+	var resp models.Metrics
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp.ID != "cpu" {
+		t.Errorf("expected id \"cpu\", got %q", resp.ID)
+	}
+	if resp.MType != models.Gauge {
+		t.Errorf("expected type %q, got %q", models.Gauge, resp.MType)
+	}
+	if resp.Value == nil || *resp.Value != 42.5 {
+		t.Errorf("expected value 42.5, got %v", resp.Value)
+	}
+}
+
+func TestJsonGetHandlerCounter(t *testing.T) {
+	h := newHandler()
+	var delta int64 = 7
+	upd := models.Metrics{ID: "hits", MType: models.Counter, Delta: &delta}
+	updBody, _ := json.Marshal(upd)
+	h.JsonUpdateHandler(httptest.NewRecorder(), makeJsonUpdateRequest(string(updBody)))
+
+	get := models.Metrics{ID: "hits", MType: models.Counter}
+	getBody, _ := json.Marshal(get)
+	w := httptest.NewRecorder()
+	h.JsonGetHandler(w, makeJsonGetRequest(string(getBody)))
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+
+	var resp models.Metrics
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp.ID != "hits" {
+		t.Errorf("expected id \"hits\", got %q", resp.ID)
+	}
+	if resp.MType != models.Counter {
+		t.Errorf("expected type %q, got %q", models.Counter, resp.MType)
+	}
+	if resp.Delta == nil || *resp.Delta != 7 {
+		t.Errorf("expected delta 7, got %v", resp.Delta)
+	}
+}
+
+func TestJsonGetHandlerGaugeNotFound(t *testing.T) {
+	h := newHandler()
+	get := models.Metrics{ID: "nonexistent", MType: models.Gauge}
+	getBody, _ := json.Marshal(get)
+
+	w := httptest.NewRecorder()
+	h.JsonGetHandler(w, makeJsonGetRequest(string(getBody)))
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404 for missing gauge, got %d", w.Code)
+	}
+}
+
+func TestJsonGetHandlerCounterNotFound(t *testing.T) {
+	h := newHandler()
+	get := models.Metrics{ID: "nonexistent", MType: models.Counter}
+	getBody, _ := json.Marshal(get)
+
+	w := httptest.NewRecorder()
+	h.JsonGetHandler(w, makeJsonGetRequest(string(getBody)))
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404 for missing counter, got %d", w.Code)
+	}
+}
+
+func TestJsonGetHandlerBadMethod(t *testing.T) {
+	h := newHandler()
+	get := models.Metrics{ID: "cpu", MType: models.Gauge}
+	getBody, _ := json.Marshal(get)
+
+	req := httptest.NewRequest(http.MethodPost, "/value", strings.NewReader(string(getBody)))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	h.JsonGetHandler(w, req)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Errorf("expected 405 for POST on JsonGetHandler, got %d", w.Code)
+	}
+}
+
+func TestJsonGetHandlerInvalidJSON(t *testing.T) {
+	h := newHandler()
+
+	w := httptest.NewRecorder()
+	h.JsonGetHandler(w, makeJsonGetRequest("not-json"))
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500 for invalid JSON, got %d", w.Code)
+	}
+}
+
+func TestJsonGetHandlerUnknownType(t *testing.T) {
+	h := newHandler()
+	get := models.Metrics{ID: "latency", MType: "histogram"}
+	getBody, _ := json.Marshal(get)
+
+	w := httptest.NewRecorder()
+	h.JsonGetHandler(w, makeJsonGetRequest(string(getBody)))
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for unknown metric type, got %d", w.Code)
+	}
+}
+
+func TestJsonGetHandlerGaugeEncodeError(t *testing.T) {
+	h := newHandler()
+	v := 1.0
+	upd := models.Metrics{ID: "cpu", MType: models.Gauge, Value: &v}
+	updBody, _ := json.Marshal(upd)
+	h.JsonUpdateHandler(httptest.NewRecorder(), makeJsonUpdateRequest(string(updBody)))
+
+	get := models.Metrics{ID: "cpu", MType: models.Gauge}
+	getBody, _ := json.Marshal(get)
+	// errorResponseWriter forces enc.Encode to fail, covering the error branch.
+	h.JsonGetHandler(&errorResponseWriter{}, makeJsonGetRequest(string(getBody)))
+}
+
+func TestJsonGetHandlerCounterEncodeError(t *testing.T) {
+	h := newHandler()
+	var delta int64 = 5
+	upd := models.Metrics{ID: "hits", MType: models.Counter, Delta: &delta}
+	updBody, _ := json.Marshal(upd)
+	h.JsonUpdateHandler(httptest.NewRecorder(), makeJsonUpdateRequest(string(updBody)))
+
+	get := models.Metrics{ID: "hits", MType: models.Counter}
+	getBody, _ := json.Marshal(get)
+	h.JsonGetHandler(&errorResponseWriter{}, makeJsonGetRequest(string(getBody)))
+}
+
+func TestJsonGetHandlerContentType(t *testing.T) {
+	h := newHandler()
+	v := 1.0
+	upd := models.Metrics{ID: "cpu", MType: models.Gauge, Value: &v}
+	updBody, _ := json.Marshal(upd)
+	h.JsonUpdateHandler(httptest.NewRecorder(), makeJsonUpdateRequest(string(updBody)))
+
+	get := models.Metrics{ID: "cpu", MType: models.Gauge}
+	getBody, _ := json.Marshal(get)
+	w := httptest.NewRecorder()
+	h.JsonGetHandler(w, makeJsonGetRequest(string(getBody)))
+
+	if ct := w.Header().Get("Content-Type"); ct != "application/json" {
+		t.Errorf("expected Content-Type application/json, got %q", ct)
 	}
 }

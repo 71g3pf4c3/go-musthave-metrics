@@ -1,14 +1,15 @@
 package agent_test
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"sync"
 	"testing"
 
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/agent"
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/config"
+	"github.com/71g3pf4c3/go-musthave-metrics/internal/models"
 )
 
 var expectedGaugeNames = []string{
@@ -22,16 +23,17 @@ var expectedGaugeNames = []string{
 
 func TestCollectAndReport_AllMetricsSent(t *testing.T) {
 	var mu sync.Mutex
-	var received []string
+	var received []models.Metrics
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		mu.Lock()
-		received = append(received, r.URL.Path)
-		mu.Unlock()
-		if r.Header.Get("Content-Type") != "text/plain" {
+		var m models.Metrics
+		if err := json.NewDecoder(r.Body).Decode(&m); err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
+		mu.Lock()
+		received = append(received, m)
+		mu.Unlock()
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
@@ -42,8 +44,8 @@ func TestCollectAndReport_AllMetricsSent(t *testing.T) {
 
 	for _, name := range expectedGaugeNames {
 		found := false
-		for _, path := range received {
-			if strings.Contains(path, "/update/gauge/"+name+"/") {
+		for _, m := range received {
+			if m.ID == name && m.MType == models.Gauge && m.Value != nil {
 				found = true
 				break
 			}
@@ -55,8 +57,8 @@ func TestCollectAndReport_AllMetricsSent(t *testing.T) {
 
 	// PollCount counter must be sent
 	pollSent := false
-	for _, path := range received {
-		if strings.Contains(path, "/update/counter/PollCount/") {
+	for _, m := range received {
+		if m.ID == "PollCount" && m.MType == models.Counter && m.Delta != nil {
 			pollSent = true
 			break
 		}
@@ -66,13 +68,13 @@ func TestCollectAndReport_AllMetricsSent(t *testing.T) {
 	}
 }
 
-func TestCollectAndReport_ContentTypeIsTextPlain(t *testing.T) {
+func TestCollectAndReport_ContentTypeIsJSON(t *testing.T) {
 	var mu sync.Mutex
 	badRequests := 0
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
-		if r.Header.Get("Content-Type") != "text/plain" {
+		if r.Header.Get("Content-Type") != "application/json" {
 			badRequests++
 		}
 		mu.Unlock()
@@ -114,11 +116,16 @@ func TestCollectAndReport_MethodIsPost(t *testing.T) {
 
 func TestReport_PollCountIncrementsEachCollect(t *testing.T) {
 	var mu sync.Mutex
-	var received []string
+	var received []models.Metrics
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var m models.Metrics
+		if err := json.NewDecoder(r.Body).Decode(&m); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
 		mu.Lock()
-		received = append(received, r.URL.Path)
+		received = append(received, m)
 		mu.Unlock()
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -130,11 +137,10 @@ func TestReport_PollCountIncrementsEachCollect(t *testing.T) {
 	a.Collect()
 	a.Report()
 
-	for _, path := range received {
-		if strings.HasPrefix(path, "/update/counter/PollCount/") {
-			suffix := strings.TrimPrefix(path, "/update/counter/PollCount/")
-			if suffix != "3" {
-				t.Errorf("expected PollCount=3 after 3 collects, got %q", suffix)
+	for _, m := range received {
+		if m.ID == "PollCount" && m.MType == models.Counter {
+			if m.Delta == nil || *m.Delta != 3 {
+				t.Errorf("expected PollCount=3 after 3 collects, got %v", m.Delta)
 			}
 			return
 		}
@@ -142,13 +148,34 @@ func TestReport_PollCountIncrementsEachCollect(t *testing.T) {
 	t.Error("PollCount not found in sent requests")
 }
 
-func TestReport_URLFormat(t *testing.T) {
+func TestReport_SendError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	addr := srv.URL
+	srv.Close()
+
+	a := agent.New(config.AgentConfig{Address: addr, PollInterval: 1, ReportInterval: 1})
+	a.Collect()
+	a.Report() // must not panic
+}
+
+func TestReport_JSONFormat(t *testing.T) {
 	var mu sync.Mutex
-	var paths []string
+	var received []models.Metrics
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/update" {
+			t.Errorf("expected path /update, got %q", r.URL.Path)
+		}
+		var m models.Metrics
+		if err := json.NewDecoder(r.Body).Decode(&m); err != nil {
+			t.Errorf("failed to decode JSON body: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
 		mu.Lock()
-		paths = append(paths, r.URL.Path)
+		received = append(received, m)
 		mu.Unlock()
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -158,17 +185,18 @@ func TestReport_URLFormat(t *testing.T) {
 	a.Collect()
 	a.Report()
 
-	for _, path := range paths {
-		parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
-		if len(parts) != 4 {
-			t.Errorf("unexpected URL format: %q (want /update/<type>/<name>/<value>)", path)
+	for _, m := range received {
+		if m.ID == "" {
+			t.Error("metric ID is empty")
 		}
-		if parts[0] != "update" {
-			t.Errorf("expected path to start with /update, got %q", path)
+		if m.MType != models.Gauge && m.MType != models.Counter {
+			t.Errorf("unexpected metric type %q", m.MType)
 		}
-		metricType := parts[1]
-		if metricType != "gauge" && metricType != "counter" {
-			t.Errorf("unexpected metric type %q in path %q", metricType, path)
+		if m.MType == models.Gauge && m.Value == nil {
+			t.Errorf("gauge metric %q has nil Value", m.ID)
+		}
+		if m.MType == models.Counter && m.Delta == nil {
+			t.Errorf("counter metric %q has nil Delta", m.ID)
 		}
 	}
 }

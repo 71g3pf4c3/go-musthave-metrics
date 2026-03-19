@@ -30,9 +30,11 @@ func New(cfg *config.ServerConfig) *http.Server {
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(60 * time.Second))
 
-	r.Get("/", ms.ListMetricsHandler)
-	r.Get("/value/{kind}/{name}", ms.GetMetricHandler)
+	r.Get("/", ms.ListHandler)
+	r.Get("/value/{kind}/{name}", ms.GetHandler)
 	r.Post("/update/{kind}/{name}/{value}", ms.UpdateHandler)
+	r.Post("/update", ms.JsonUpdateHandler)
+	r.Post("/value", ms.JsonGetHandler)
 
 	return &http.Server{
 		Addr:         cfg.Address,
