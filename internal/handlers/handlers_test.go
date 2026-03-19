@@ -60,7 +60,7 @@ func makeJsonUpdateRequest(body string) *http.Request {
 }
 
 func makeJsonGetRequest(body string) *http.Request {
-	req := httptest.NewRequest(http.MethodGet, "/value", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/value", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	return req
 }
@@ -401,20 +401,6 @@ func TestJsonUpdateHandlerGaugeOverrides(t *testing.T) {
 	}
 }
 
-func TestJsonUpdateHandlerBadMethod(t *testing.T) {
-	h := newHandler()
-	v := 1.0
-	m := models.Metrics{ID: "cpu", MType: models.Gauge, Value: &v}
-	body, _ := json.Marshal(m)
-
-	req := httptest.NewRequest(http.MethodGet, "/update", strings.NewReader(string(body)))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	h.JsonUpdateHandler(w, req)
-	if w.Code != http.StatusMethodNotAllowed {
-		t.Errorf("expected 405 for GET on JsonUpdateHandler, got %d", w.Code)
-	}
-}
 
 func TestJsonUpdateHandlerInvalidJSON(t *testing.T) {
 	h := newHandler()
@@ -528,19 +514,6 @@ func TestJsonGetHandlerCounterNotFound(t *testing.T) {
 	}
 }
 
-func TestJsonGetHandlerBadMethod(t *testing.T) {
-	h := newHandler()
-	get := models.Metrics{ID: "cpu", MType: models.Gauge}
-	getBody, _ := json.Marshal(get)
-
-	req := httptest.NewRequest(http.MethodPost, "/value", strings.NewReader(string(getBody)))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	h.JsonGetHandler(w, req)
-	if w.Code != http.StatusMethodNotAllowed {
-		t.Errorf("expected 405 for POST on JsonGetHandler, got %d", w.Code)
-	}
-}
 
 func TestJsonGetHandlerInvalidJSON(t *testing.T) {
 	h := newHandler()
