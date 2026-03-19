@@ -104,12 +104,6 @@ func (ms *MetricsServer) UpdateHandler(res http.ResponseWriter, req *http.Reques
 }
 
 func (ms *MetricsServer) JsonUpdateHandler(res http.ResponseWriter, req *http.Request) {
-	if req.Method != http.MethodPost {
-		logger.Sugar.Debug("got request with bad method", zap.String("method", req.Method))
-		res.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
-
 	logger.Sugar.Debug("decoding request")
 	var metric models.Metrics
 	dec := json.NewDecoder(req.Body)
@@ -125,21 +119,15 @@ func (ms *MetricsServer) JsonUpdateHandler(res http.ResponseWriter, req *http.Re
 	case models.Counter:
 		ms.repository.AddCounter(metric.ID, *metric.Delta)
 	default:
-		res.WriteHeader(http.StatusBadRequest)
 		logger.Sugar.Debug("unsupported request type", zap.String("type", metric.MType))
-		res.WriteHeader(http.StatusUnprocessableEntity)
+		res.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
+	res.WriteHeader(http.StatusOK)
 }
 
 func (ms *MetricsServer) JsonGetHandler(res http.ResponseWriter, req *http.Request) {
-
-	if req.Method != http.MethodGet {
-		logger.Sugar.Debug("got request with bad method", zap.String("method", req.Method))
-		res.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
 
 	logger.Sugar.Debug("decoding request")
 	var metric models.Metrics
@@ -197,11 +185,8 @@ func (ms *MetricsServer) JsonGetHandler(res http.ResponseWriter, req *http.Reque
 			return
 		}
 	default:
-		res.WriteHeader(http.StatusBadRequest)
 		logger.Sugar.Debug("unsupported request type", zap.String("type", metric.MType))
-		res.WriteHeader(http.StatusUnprocessableEntity)
+		res.WriteHeader(http.StatusBadRequest)
 		return
 	}
-
-	res.WriteHeader(http.StatusOK)
 }
