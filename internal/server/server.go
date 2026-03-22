@@ -28,6 +28,7 @@ func New(cfg *config.ServerConfig) *http.Server {
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
+	r.Use(middleware.Compress(5, "text/html", "application/json"))
 	r.Use(middleware.Timeout(60 * time.Second))
 
 	r.Use(middleware.StripSlashes)
