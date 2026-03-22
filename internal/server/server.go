@@ -36,8 +36,8 @@ func New(cfg *config.ServerConfig) *http.Server {
 	r.Get("/", ms.ListHandler)
 	r.Get("/value/{kind}/{name}", ms.GetHandler)
 	r.Post("/update/{kind}/{name}/{value}", ms.UpdateHandler)
-	r.Post("/update", ms.JsonUpdateHandler)
-	r.Post("/value", ms.JsonGetHandler)
+	r.Post("/update", ms.JSONUpdateHandler)
+	r.Post("/value", ms.JSONGetHandler)
 
 	return &http.Server{
 		Addr:         cfg.Address,
