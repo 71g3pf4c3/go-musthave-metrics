@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/71g3pf4c3/go-musthave-metrics/internal/compress"
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/config"
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/handlers"
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/logger"
@@ -28,7 +29,7 @@ func New(cfg *config.ServerConfig) *http.Server {
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
-	r.Use(middleware.Compress(5, "text/html", "application/json"))
+	r.Use(compress.CompressMiddleware)
 	r.Use(middleware.Timeout(60 * time.Second))
 
 	r.Use(middleware.StripSlashes)

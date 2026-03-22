@@ -1,6 +1,9 @@
 package agent
 
 import (
+	"bytes"
+	"compress/gzip"
+	"encoding/json"
 	"fmt"
 	"maps"
 	"math/rand"
@@ -101,9 +104,25 @@ func (a *Agent) Report() {
 }
 
 func (a *Agent) sendMetric(metric models.Metrics) error {
-	_, err := a.client.R().
+	data, err := json.Marshal(metric)
+	if err != nil {
+		return fmt.Errorf("marshal metric: %w", err)
+	}
+
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	if _, err := gz.Write(data); err != nil {
+		return fmt.Errorf("gzip write: %w", err)
+	}
+	if err := gz.Close(); err != nil {
+		return fmt.Errorf("gzip close: %w", err)
+	}
+
+	_, err = a.client.R().
 		SetHeader("Content-Type", "application/json").
-		SetBody(metric).
+		SetHeader("Content-Encoding", "gzip").
+		SetHeader("Accept-Encoding", "gzip").
+		SetBody(buf.Bytes()).
 		Post(fmt.Sprintf("%s/update", a.serverAddr))
 	return err
 }
