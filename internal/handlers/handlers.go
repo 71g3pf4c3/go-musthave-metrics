@@ -21,11 +21,11 @@ func NewMetricsServer(ms *repository.MemStorage) *MetricsServer {
 	return &MetricsServer{repository: ms}
 }
 
-func MainPageHandler(res http.ResponseWriter, req *http.Request) {
-	res.Write([]byte("Welcome to go-musthave-metrics!"))
+func MainPageHandler(w http.ResponseWriter, r *http.Request) {
+	w.Write([]byte("Welcome to go-musthave-metrics!"))
 }
 
-func (ms *MetricsServer) ListHandler(res http.ResponseWriter, req *http.Request) {
+func (ms *MetricsServer) ListHandler(w http.ResponseWriter, r *http.Request) {
 	gauges := ms.repository.GetAllGauge()
 	counters := ms.repository.GetAllCounter()
 
@@ -38,46 +38,46 @@ func (ms *MetricsServer) ListHandler(res http.ResponseWriter, req *http.Request)
 	}
 	body += "</ul></body></html>"
 
-	res.Header().Set("Content-Type", "text/html")
-	res.WriteHeader(http.StatusOK)
-	res.Write([]byte(body))
+	w.Header().Set("Content-Type", "text/html")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(body))
 }
 
-func (ms *MetricsServer) GetHandler(res http.ResponseWriter, req *http.Request) {
+func (ms *MetricsServer) GetHandler(w http.ResponseWriter, r *http.Request) {
 
-	name := req.PathValue("name")
-	kind := req.PathValue("kind")
+	name := r.PathValue("name")
+	kind := r.PathValue("kind")
 
 	if name == "" {
-		res.WriteHeader(http.StatusNotFound)
+		w.WriteHeader(http.StatusNotFound)
 		return
 	}
 	v, err := ms.repository.GetValue(name, kind)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
-			res.WriteHeader(http.StatusNotFound)
+			w.WriteHeader(http.StatusNotFound)
 		} else {
-			res.WriteHeader(http.StatusBadRequest)
+			w.WriteHeader(http.StatusBadRequest)
 		}
 		return
 	}
-	res.Header().Set("Content-Type", "text/plain")
-	res.WriteHeader(http.StatusOK)
-	res.Write([]byte(v))
+	w.Header().Set("Content-Type", "text/plain")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(v))
 }
 
-func (ms *MetricsServer) UpdateHandler(res http.ResponseWriter, req *http.Request) {
-	kind := req.PathValue("kind")
-	name := req.PathValue("name")
-	value := req.PathValue("value")
+func (ms *MetricsServer) UpdateHandler(w http.ResponseWriter, r *http.Request) {
+	kind := r.PathValue("kind")
+	name := r.PathValue("name")
+	value := r.PathValue("value")
 
 	if name == "" {
-		res.WriteHeader(http.StatusBadRequest)
+		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
 	if value == "" {
-		res.WriteHeader(http.StatusBadRequest)
+		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
@@ -85,31 +85,31 @@ func (ms *MetricsServer) UpdateHandler(res http.ResponseWriter, req *http.Reques
 	case models.Gauge:
 		v, err := strconv.ParseFloat(value, 64)
 		if err != nil {
-			res.WriteHeader(http.StatusBadRequest)
+			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
 		ms.repository.SetGauge(name, v)
 	case models.Counter:
 		v, err := strconv.ParseInt(value, 10, 64)
 		if err != nil {
-			res.WriteHeader(http.StatusBadRequest)
+			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
 		ms.repository.AddCounter(name, v)
 	default:
-		res.WriteHeader(http.StatusBadRequest)
+		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
 }
 
-func (ms *MetricsServer) JSONUpdateHandler(res http.ResponseWriter, req *http.Request) {
+func (ms *MetricsServer) JSONUpdateHandler(w http.ResponseWriter, r *http.Request) {
 	logger.Sugar.Debug("decoding request")
 	var metric models.Metrics
-	dec := json.NewDecoder(req.Body)
+	dec := json.NewDecoder(r.Body)
 	if err := dec.Decode(&metric); err != nil {
 		logger.Sugar.Debug("cannot decode request JSON body", zap.Error(err))
-		res.WriteHeader(http.StatusInternalServerError)
+		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
@@ -120,37 +120,37 @@ func (ms *MetricsServer) JSONUpdateHandler(res http.ResponseWriter, req *http.Re
 		ms.repository.AddCounter(metric.ID, *metric.Delta)
 	default:
 		logger.Sugar.Debug("unsupported request type", zap.String("type", metric.MType))
-		res.WriteHeader(http.StatusBadRequest)
+		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
-	res.WriteHeader(http.StatusOK)
+	w.WriteHeader(http.StatusOK)
 }
 
-func (ms *MetricsServer) JSONGetHandler(res http.ResponseWriter, req *http.Request) {
+func (ms *MetricsServer) JSONGetHandler(w http.ResponseWriter, r *http.Request) {
 
 	logger.Sugar.Debug("decoding request")
 	var metric models.Metrics
-	dec := json.NewDecoder(req.Body)
+	dec := json.NewDecoder(r.Body)
 	if err := dec.Decode(&metric); err != nil {
 		logger.Sugar.Debug("cannot decode request JSON body", zap.Error(err))
-		res.WriteHeader(http.StatusInternalServerError)
+		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
-	res.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Type", "application/json")
 
-	enc := json.NewEncoder(res)
+	enc := json.NewEncoder(w)
 	switch metric.MType {
 	case models.Gauge:
 		gaugeValue, err := ms.repository.GetGauge(metric.ID)
 		if err != nil {
 			if errors.Is(err, repository.ErrNotFound) {
 				logger.Sugar.Debug("metric not found", zap.Error(err))
-				res.WriteHeader(http.StatusNotFound)
+				w.WriteHeader(http.StatusNotFound)
 			} else {
 				logger.Sugar.Debug("bad request", zap.Error(err))
-				res.WriteHeader(http.StatusBadRequest)
+				w.WriteHeader(http.StatusBadRequest)
 			}
 			return
 		}
@@ -168,10 +168,10 @@ func (ms *MetricsServer) JSONGetHandler(res http.ResponseWriter, req *http.Reque
 		if err != nil {
 			if errors.Is(err, repository.ErrNotFound) {
 				logger.Sugar.Debug("metric not found", zap.Error(err))
-				res.WriteHeader(http.StatusNotFound)
+				w.WriteHeader(http.StatusNotFound)
 			} else {
 				logger.Sugar.Debug("bad request", zap.Error(err))
-				res.WriteHeader(http.StatusBadRequest)
+				w.WriteHeader(http.StatusBadRequest)
 			}
 			return
 		}
@@ -186,7 +186,7 @@ func (ms *MetricsServer) JSONGetHandler(res http.ResponseWriter, req *http.Reque
 		}
 	default:
 		logger.Sugar.Debug("unsupported request type", zap.String("type", metric.MType))
-		res.WriteHeader(http.StatusBadRequest)
+		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 }
