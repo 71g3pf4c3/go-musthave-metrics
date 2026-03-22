@@ -103,7 +103,7 @@ func (ms *MetricsServer) UpdateHandler(res http.ResponseWriter, req *http.Reques
 
 }
 
-func (ms *MetricsServer) JsonUpdateHandler(res http.ResponseWriter, req *http.Request) {
+func (ms *MetricsServer) JSONUpdateHandler(res http.ResponseWriter, req *http.Request) {
 	logger.Sugar.Debug("decoding request")
 	var metric models.Metrics
 	dec := json.NewDecoder(req.Body)
@@ -127,7 +127,7 @@ func (ms *MetricsServer) JsonUpdateHandler(res http.ResponseWriter, req *http.Re
 	res.WriteHeader(http.StatusOK)
 }
 
-func (ms *MetricsServer) JsonGetHandler(res http.ResponseWriter, req *http.Request) {
+func (ms *MetricsServer) JSONGetHandler(res http.ResponseWriter, req *http.Request) {
 
 	logger.Sugar.Debug("decoding request")
 	var metric models.Metrics
