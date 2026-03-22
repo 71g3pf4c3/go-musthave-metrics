@@ -39,14 +39,14 @@ func TestGzipDecompress_CompressedBody(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	req := httptest.NewRequest(http.MethodPost, "/update", body)
-	req.Header.Set("Content-Encoding", "gzip")
-	rec := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/update", body)
+	r.Header.Set("Content-Encoding", "gzip")
+	w := httptest.NewRecorder()
 
-	handler.ServeHTTP(rec, req)
+	handler.ServeHTTP(w, r)
 
-	if rec.Code != http.StatusOK {
-		t.Errorf("expected 200, got %d", rec.Code)
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
 	}
 }
 
@@ -64,13 +64,13 @@ func TestGzipDecompress_Passthrough(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	req := httptest.NewRequest(http.MethodPost, "/update", bytes.NewReader(original))
-	rec := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/update", bytes.NewReader(original))
+	w := httptest.NewRecorder()
 
-	handler.ServeHTTP(rec, req)
+	handler.ServeHTTP(w, r)
 
-	if rec.Code != http.StatusOK {
-		t.Errorf("expected 200, got %d", rec.Code)
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
 	}
 }
 
@@ -79,14 +79,14 @@ func TestGzipDecompress_InvalidGzip(t *testing.T) {
 		t.Error("handler should not be called for invalid gzip")
 	}))
 
-	req := httptest.NewRequest(http.MethodPost, "/update", bytes.NewReader([]byte("not gzip")))
-	req.Header.Set("Content-Encoding", "gzip")
-	rec := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/update", bytes.NewReader([]byte("not gzip")))
+	r.Header.Set("Content-Encoding", "gzip")
+	w := httptest.NewRecorder()
 
-	handler.ServeHTTP(rec, req)
+	handler.ServeHTTP(w, r)
 
-	if rec.Code != http.StatusInternalServerError {
-		t.Errorf("expected 500, got %d", rec.Code)
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500, got %d", w.Code)
 	}
 }
 
@@ -97,17 +97,17 @@ func TestCompressMiddleware_ResponseCompression(t *testing.T) {
 		w.Write([]byte(`{"status":"ok"}`))
 	}))
 
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.Header.Set("Accept-Encoding", "gzip")
-	rec := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.Header.Set("Accept-Encoding", "gzip")
+	w := httptest.NewRecorder()
 
-	handler.ServeHTTP(rec, req)
+	handler.ServeHTTP(w, r)
 
-	if rec.Header().Get("Content-Encoding") != "gzip" {
-		t.Errorf("expected Content-Encoding: gzip, got %q", rec.Header().Get("Content-Encoding"))
+	if w.Header().Get("Content-Encoding") != "gzip" {
+		t.Errorf("expected Content-Encoding: gzip, got %q", w.Header().Get("Content-Encoding"))
 	}
 
-	gz, err := gzip.NewReader(rec.Body)
+	gz, err := gzip.NewReader(w.Body)
 	if err != nil {
 		t.Fatalf("response is not valid gzip: %v", err)
 	}

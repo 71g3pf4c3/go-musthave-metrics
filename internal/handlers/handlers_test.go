@@ -38,31 +38,31 @@ func newHandler() *handlers.MetricsServer {
 }
 
 func makeRequest(kind, name, value string) *http.Request {
-	req := httptest.NewRequest(http.MethodPost, "/update/"+kind+"/"+name+"/"+value, nil)
-	req.Header.Set("Content-Type", "text/plain")
-	req.SetPathValue("kind", kind)
-	req.SetPathValue("name", name)
-	req.SetPathValue("value", value)
-	return req
+	r := httptest.NewRequest(http.MethodPost, "/update/"+kind+"/"+name+"/"+value, nil)
+	r.Header.Set("Content-Type", "text/plain")
+	r.SetPathValue("kind", kind)
+	r.SetPathValue("name", name)
+	r.SetPathValue("value", value)
+	return r
 }
 
 func makeGetRequest(kind, name string) *http.Request {
-	req := httptest.NewRequest(http.MethodGet, "/value/"+kind+"/"+name, nil)
-	req.SetPathValue("kind", kind)
-	req.SetPathValue("name", name)
-	return req
+	r := httptest.NewRequest(http.MethodGet, "/value/"+kind+"/"+name, nil)
+	r.SetPathValue("kind", kind)
+	r.SetPathValue("name", name)
+	return r
 }
 
 func makeJSONUpdateRequest(body string) *http.Request {
-	req := httptest.NewRequest(http.MethodPost, "/update", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	return req
+	r := httptest.NewRequest(http.MethodPost, "/update", strings.NewReader(body))
+	r.Header.Set("Content-Type", "application/json")
+	return r
 }
 
 func makeJSONGetRequest(body string) *http.Request {
-	req := httptest.NewRequest(http.MethodPost, "/value", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	return req
+	r := httptest.NewRequest(http.MethodPost, "/value", strings.NewReader(body))
+	r.Header.Set("Content-Type", "application/json")
+	return r
 }
 
 // --- ListHandler ---
@@ -279,24 +279,24 @@ func TestUpdateHandlerUnknownKind(t *testing.T) {
 }
 
 func TestUpdateHandlerEmptyName(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPost, "/update/gauge//42.5", nil)
-	req.SetPathValue("kind", "gauge")
-	req.SetPathValue("name", "")
-	req.SetPathValue("value", "42.5")
+	r := httptest.NewRequest(http.MethodPost, "/update/gauge//42.5", nil)
+	r.SetPathValue("kind", "gauge")
+	r.SetPathValue("name", "")
+	r.SetPathValue("value", "42.5")
 	w := httptest.NewRecorder()
-	newHandler().UpdateHandler(w, req)
+	newHandler().UpdateHandler(w, r)
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected 400 for empty name, got %d", w.Code)
 	}
 }
 
 func TestUpdateHandlerEmptyValue(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPost, "/update/gauge/cpu/", nil)
-	req.SetPathValue("kind", "gauge")
-	req.SetPathValue("name", "cpu")
-	req.SetPathValue("value", "")
+	r := httptest.NewRequest(http.MethodPost, "/update/gauge/cpu/", nil)
+	r.SetPathValue("kind", "gauge")
+	r.SetPathValue("name", "cpu")
+	r.SetPathValue("value", "")
 	w := httptest.NewRecorder()
-	newHandler().UpdateHandler(w, req)
+	newHandler().UpdateHandler(w, r)
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected 400 for empty value, got %d", w.Code)
 	}
