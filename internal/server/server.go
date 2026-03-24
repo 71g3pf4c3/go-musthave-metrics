@@ -30,17 +30,15 @@ func New(cfg *config.ServerConfig) *http.Server {
 		logger.Sugar.Debug("restore flag set")
 	}
 
-	dumpTicker := time.NewTicker(time.Duration(cfg.StoreInterval) * time.Second)
-	go func() error {
-		defer dumpTicker.Stop()
-		for {
-			select {
-			case <-dumpTicker.C:
+	if cfg.StoreInterval > 0 {
+		dumpTicker := time.NewTicker(time.Duration(cfg.StoreInterval) * time.Second)
+		go func() {
+			for range dumpTicker.C {
 				logger.Sugar.Debug("dumped data")
 				ms.Dump(cfg.FileStoragePath)
 			}
-		}
-	}()
+		}()
+	}
 
 	r.Use(logger.RequestLogger)
 	r.Use(middleware.RequestID)
