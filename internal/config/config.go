@@ -3,6 +3,7 @@ package config
 import (
 	"flag"
 	"log"
+	"os"
 	"strings"
 
 	"github.com/caarlos0/env/v6"
@@ -15,8 +16,11 @@ type AgentConfig struct {
 }
 
 type ServerConfig struct {
-	Address  string `env:"ADDRESS"`
-	LogLevel string `env:"LOG_LEVEL"`
+	Address         string `env:"ADDRESS"`
+	LogLevel        string `env:"LOG_LEVEL"`
+	StoreInterval   int    `env:"STORE_INTERVAL"`
+	FileStoragePath string `env:"FILE_STORAGE_PATH"`
+	RestoreFlag     bool   `env:"RESTORE"`
 }
 
 func NewAgentConfig() *AgentConfig {
@@ -55,11 +59,17 @@ func NewAgentConfig() *AgentConfig {
 func NewServerConfig() *ServerConfig {
 	addressFlag := flag.String("a", "localhost:8080", "server listen address")
 	logLevel := flag.String("l", "info", "server log level")
+	storeInterval := flag.Int("i", 300, "store interval in seconds (0 for synchronous writes)")
+	fileStoragePath := flag.String("f", "/tmp/metrics-db.json", "file storage path")
+	restoreFlag := flag.Bool("r", true, "restore data from file on startup")
 	flag.Parse()
 
 	cfg := ServerConfig{
-		Address:  *addressFlag,
-		LogLevel: *logLevel,
+		Address:         *addressFlag,
+		LogLevel:        *logLevel,
+		StoreInterval:   *storeInterval,
+		FileStoragePath: *fileStoragePath,
+		RestoreFlag:     *restoreFlag,
 	}
 
 	var envCfg ServerConfig
@@ -71,6 +81,16 @@ func NewServerConfig() *ServerConfig {
 	}
 	if envCfg.LogLevel != "" {
 		cfg.LogLevel = envCfg.LogLevel
+	}
+	if envCfg.StoreInterval != 0 {
+		cfg.StoreInterval = envCfg.StoreInterval
+	}
+	if envCfg.FileStoragePath != "" {
+		cfg.FileStoragePath = envCfg.FileStoragePath
+	}
+	// For boolean env variable, we need to check if it was explicitly set
+	if os.Getenv("RESTORE") != "" {
+		cfg.RestoreFlag = envCfg.RestoreFlag
 	}
 
 	return &cfg

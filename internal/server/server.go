@@ -16,14 +16,31 @@ import (
 )
 
 func New(cfg *config.ServerConfig) *http.Server {
+	if err := logger.Initialize(cfg.LogLevel); err != nil {
+		log.Fatalf("failed to initialize logger: %v", err)
+	}
+
 	storage := repository.NewMemStorage()
 	ms := handlers.NewMetricsServer(storage)
 
 	r := chi.NewRouter()
 
-	if err := logger.Initialize(cfg.LogLevel); err != nil {
-		log.Fatalf("failed to initialize logger: %v", err)
+	if cfg.RestoreFlag {
+		ms.Restore(cfg.FileStoragePath)
+		logger.Sugar.Debug("restore flag set")
 	}
+
+	dumpTicker := time.NewTicker(time.Duration(cfg.StoreInterval) * time.Second)
+	go func() error {
+		defer dumpTicker.Stop()
+		for {
+			select {
+			case <-dumpTicker.C:
+				logger.Sugar.Debug("dumped data")
+				ms.Dump(cfg.FileStoragePath)
+			}
+		}
+	}()
 
 	r.Use(logger.RequestLogger)
 	r.Use(middleware.RequestID)
@@ -40,6 +57,7 @@ func New(cfg *config.ServerConfig) *http.Server {
 	r.Post("/update", ms.JSONUpdateHandler)
 	r.Post("/value", ms.JSONGetHandler)
 
+	logger.Sugar.Debug("started server")
 	return &http.Server{
 		Addr:         cfg.Address,
 		Handler:      r,

@@ -21,6 +21,16 @@ func NewMetricsServer(ms *repository.MemStorage) *MetricsServer {
 	return &MetricsServer{repository: ms}
 }
 
+func (ms *MetricsServer) Dump(path string) error {
+	err := ms.repository.Dump(path)
+	return err
+}
+
+func (ms *MetricsServer) Restore(path string) error {
+	err := ms.repository.Restore(path)
+	return err
+}
+
 func MainPageHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("Welcome to go-musthave-metrics!"))
 }
