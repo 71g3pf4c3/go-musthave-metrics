@@ -61,7 +61,7 @@ func (ms *MetricsServer) GetHandler(w http.ResponseWriter, r *http.Request) {
 
 	if name == "" {
 		logger.Sugar.Debug("metric name is empty")
-		w.WriteHeader(http.StatusNotFound)
+		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 	v, err := ms.repository.GetValue(name, kind)
