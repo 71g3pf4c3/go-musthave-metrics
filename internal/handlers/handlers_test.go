@@ -263,8 +263,8 @@ func TestGetHandlerMissingName(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	h.GetHandler(w, makeGetRequest("gauge", ""))
-	if w.Code != http.StatusNotFound {
-		t.Errorf("expected 404, got %d", w.Code)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", w.Code)
 	}
 }
 
