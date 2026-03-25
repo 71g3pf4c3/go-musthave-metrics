@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/config"
+	"github.com/71g3pf4c3/go-musthave-metrics/internal/logger"
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/models"
 	"resty.dev/v3"
 )
@@ -27,6 +28,8 @@ type Agent struct {
 }
 
 func New(config config.AgentConfig) *Agent {
+	logger.Sugar.Infof("initializing agent, server=%s, poll=%ds, report=%ds",
+		config.Address, config.PollInterval, config.ReportInterval)
 	return &Agent{
 		client:         resty.New(),
 		serverAddr:     config.Address,
@@ -40,6 +43,7 @@ func (a *Agent) Collect() {
 	a.m.Lock()
 	var ms runtime.MemStats
 	runtime.ReadMemStats(&ms)
+	logger.Sugar.Debug("collecting runtime metrics")
 
 	a.gauges["Alloc"] = float64(ms.Alloc)
 	a.gauges["BuckHashSys"] = float64(ms.BuckHashSys)
@@ -71,6 +75,7 @@ func (a *Agent) Collect() {
 	a.gauges["RandomValue"] = rand.Float64()
 
 	a.pollCount++
+	logger.Sugar.Debugf("metrics collected, pollCount=%d", a.pollCount)
 	a.m.Unlock()
 }
 
@@ -81,6 +86,8 @@ func (a *Agent) Report() {
 	pollCount := a.pollCount
 	a.m.Unlock()
 
+	logger.Sugar.Infof("reporting %d gauge metrics and PollCount=%d", len(gauges), pollCount)
+
 	for name, value := range gauges {
 		v := value
 		metric := models.Metrics{
@@ -89,7 +96,7 @@ func (a *Agent) Report() {
 			Value: &v,
 		}
 		if err := a.sendMetric(metric); err != nil {
-			fmt.Printf("send gauge %s: %v\n", name, err)
+			logger.Sugar.Errorf("send gauge %s: %v", name, err)
 		}
 	}
 
@@ -99,11 +106,13 @@ func (a *Agent) Report() {
 		Delta: &pollCount,
 	}
 	if err := a.sendMetric(metric); err != nil {
-		fmt.Printf("send counter PollCount: %v\n", err)
+		logger.Sugar.Errorf("send counter PollCount: %v", err)
 	}
+	logger.Sugar.Debug("report complete")
 }
 
 func (a *Agent) sendMetric(metric models.Metrics) error {
+	logger.Sugar.Debugf("sending metric %s/%s", metric.MType, metric.ID)
 	data, err := json.Marshal(metric)
 	if err != nil {
 		return fmt.Errorf("marshal metric: %w", err)
@@ -128,6 +137,7 @@ func (a *Agent) sendMetric(metric models.Metrics) error {
 }
 
 func (a *Agent) Run() {
+	logger.Sugar.Info("agent started")
 	pollTicker := time.NewTicker(time.Duration(a.pollInterval) * time.Second)
 	reportTicker := time.NewTicker(time.Duration(a.reportInterval) * time.Second)
 	defer pollTicker.Stop()

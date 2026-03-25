@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"sync"
 
+	"github.com/71g3pf4c3/go-musthave-metrics/internal/logger"
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/models"
 )
 
@@ -102,26 +103,30 @@ func (ms *MemStorage) Snapshot() []models.Metrics {
 
 func (ms *MemStorage) Dump(path string) error {
 	snap := ms.Snapshot()
+	logger.Sugar.Infof("dumping %d metrics to %s", len(snap), path)
 	data, err := json.MarshalIndent(snap, "", "   ")
 	if err != nil {
+		logger.Sugar.Debugf("failed to marshal metrics: %v", err)
 		return err
 	}
-	// сохраняем данные в файл
 	return os.WriteFile(path, data, 0666)
 }
 
 func (ms *MemStorage) Restore(path string) error {
+	logger.Sugar.Infof("restoring metrics from %s", path)
 	ms.m.Lock()
 	defer ms.m.Unlock()
 
 	data, err := os.ReadFile(path)
 	if err != nil {
+		logger.Sugar.Debugf("failed to read file %s: %v", path, err)
 		return err
 	}
 
 	var metrics []models.Metrics
 	err = json.Unmarshal(data, &metrics)
 	if err != nil {
+		logger.Sugar.Debugf("failed to unmarshal metrics: %v", err)
 		return err
 	}
 
@@ -143,5 +148,6 @@ func (ms *MemStorage) Restore(path string) error {
 		}
 	}
 
+	logger.Sugar.Infof("restored %d metrics", len(metrics))
 	return nil
 }

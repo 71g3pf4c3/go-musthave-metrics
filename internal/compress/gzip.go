@@ -5,6 +5,8 @@ import (
 	"io"
 	"net/http"
 	"strings"
+
+	"github.com/71g3pf4c3/go-musthave-metrics/internal/logger"
 )
 
 type compressWriter struct {
@@ -72,6 +74,7 @@ func CompressMiddleware(h http.Handler) http.Handler {
 		acceptEncoding := r.Header.Get("Accept-Encoding")
 		supportsGzip := strings.Contains(acceptEncoding, "gzip")
 		if supportsGzip {
+			logger.Sugar.Debug("compressing response with gzip")
 			cw := newCompressWriter(w)
 			ow = cw
 			defer cw.Close()
@@ -80,8 +83,10 @@ func CompressMiddleware(h http.Handler) http.Handler {
 		contentEncoding := r.Header.Get("Content-Encoding")
 		sendsGzip := strings.Contains(contentEncoding, "gzip")
 		if sendsGzip {
+			logger.Sugar.Debug("decompressing request body from gzip")
 			cr, err := newCompressReader(r.Body)
 			if err != nil {
+				logger.Sugar.Debugf("failed to decompress request: %v", err)
 				w.WriteHeader(http.StatusInternalServerError)
 				return
 			}

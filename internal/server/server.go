@@ -26,16 +26,19 @@ func New(cfg *config.ServerConfig) *http.Server {
 	r := chi.NewRouter()
 
 	if cfg.RestoreFlag {
-		ms.Restore(cfg.FileStoragePath)
-		logger.Sugar.Debug("restore flag set")
+		if err := ms.Restore(cfg.FileStoragePath); err != nil {
+			logger.Sugar.Infof("restore from %s: %v", cfg.FileStoragePath, err)
+		}
 	}
 
 	if cfg.StoreInterval > 0 {
+		logger.Sugar.Infof("periodic dump enabled every %ds to %s", cfg.StoreInterval, cfg.FileStoragePath)
 		dumpTicker := time.NewTicker(time.Duration(cfg.StoreInterval) * time.Second)
 		go func() {
 			for range dumpTicker.C {
-				logger.Sugar.Debug("dumped data")
-				ms.Dump(cfg.FileStoragePath)
+				if err := ms.Dump(cfg.FileStoragePath); err != nil {
+					logger.Sugar.Errorf("failed to dump data: %v", err)
+				}
 			}
 		}()
 	}
@@ -55,7 +58,7 @@ func New(cfg *config.ServerConfig) *http.Server {
 	r.Post("/update", ms.JSONUpdateHandler)
 	r.Post("/value", ms.JSONGetHandler)
 
-	logger.Sugar.Debug("started server")
+	logger.Sugar.Infof("starting server on %s", cfg.Address)
 	return &http.Server{
 		Addr:         cfg.Address,
 		Handler:      r,

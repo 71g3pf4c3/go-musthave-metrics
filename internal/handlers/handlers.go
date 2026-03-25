@@ -36,6 +36,7 @@ func MainPageHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (ms *MetricsServer) ListHandler(w http.ResponseWriter, r *http.Request) {
+	logger.Sugar.Debug("listing all metrics")
 	gauges := ms.repository.GetAllGauge()
 	counters := ms.repository.GetAllCounter()
 
@@ -54,19 +55,22 @@ func (ms *MetricsServer) ListHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (ms *MetricsServer) GetHandler(w http.ResponseWriter, r *http.Request) {
-
 	name := r.PathValue("name")
 	kind := r.PathValue("kind")
+	logger.Sugar.Debugf("get metric %s/%s", kind, name)
 
 	if name == "" {
+		logger.Sugar.Debug("metric name is empty")
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
 	v, err := ms.repository.GetValue(name, kind)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
+			logger.Sugar.Debugf("metric %s/%s not found", kind, name)
 			w.WriteHeader(http.StatusNotFound)
 		} else {
+			logger.Sugar.Debugf("bad request for metric %s/%s: %v", kind, name, err)
 			w.WriteHeader(http.StatusBadRequest)
 		}
 		return
@@ -80,13 +84,16 @@ func (ms *MetricsServer) UpdateHandler(w http.ResponseWriter, r *http.Request) {
 	kind := r.PathValue("kind")
 	name := r.PathValue("name")
 	value := r.PathValue("value")
+	logger.Sugar.Debugf("update metric %s/%s=%s", kind, name, value)
 
 	if name == "" {
+		logger.Sugar.Debug("metric name is empty")
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
 	if value == "" {
+		logger.Sugar.Debug("metric value is empty")
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
@@ -95,22 +102,26 @@ func (ms *MetricsServer) UpdateHandler(w http.ResponseWriter, r *http.Request) {
 	case models.Gauge:
 		v, err := strconv.ParseFloat(value, 64)
 		if err != nil {
+			logger.Sugar.Debugf("invalid gauge value %q: %v", value, err)
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
 		ms.repository.SetGauge(name, v)
+		logger.Sugar.Debugf("gauge %s updated to %v", name, v)
 	case models.Counter:
 		v, err := strconv.ParseInt(value, 10, 64)
 		if err != nil {
+			logger.Sugar.Debugf("invalid counter value %q: %v", value, err)
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
 		ms.repository.AddCounter(name, v)
+		logger.Sugar.Debugf("counter %s incremented by %d", name, v)
 	default:
+		logger.Sugar.Debugf("unsupported metric type %q", kind)
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-
 }
 
 func (ms *MetricsServer) JSONUpdateHandler(w http.ResponseWriter, r *http.Request) {
@@ -126,8 +137,10 @@ func (ms *MetricsServer) JSONUpdateHandler(w http.ResponseWriter, r *http.Reques
 	switch metric.MType {
 	case models.Gauge:
 		ms.repository.SetGauge(metric.ID, *metric.Value)
+		logger.Sugar.Debugf("json update: gauge %s set to %v", metric.ID, *metric.Value)
 	case models.Counter:
 		ms.repository.AddCounter(metric.ID, *metric.Delta)
+		logger.Sugar.Debugf("json update: counter %s incremented by %d", metric.ID, *metric.Delta)
 	default:
 		logger.Sugar.Debug("unsupported request type", zap.String("type", metric.MType))
 		w.WriteHeader(http.StatusBadRequest)
