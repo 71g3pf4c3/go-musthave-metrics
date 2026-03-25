@@ -26,7 +26,7 @@ type Repository interface {
 type MemStorage struct {
 	gauge   map[string]float64
 	counter map[string]int64
-	m       sync.Mutex
+	mu      sync.RWMutex
 }
 
 func NewMemStorage() *MemStorage {
@@ -37,9 +37,9 @@ func NewMemStorage() *MemStorage {
 }
 
 func (ms *MemStorage) AddCounter(key string, value int64) {
-	ms.m.Lock()
+	ms.mu.Lock()
+	defer ms.mu.Unlock()
 	ms.counter[key] += value
-	ms.m.Unlock()
 }
 
 func (ms *MemStorage) GetAllGauge() map[string]float64 {
@@ -51,14 +51,16 @@ func (ms *MemStorage) GetAllCounter() map[string]int64 {
 }
 
 func (ms *MemStorage) SetGauge(key string, value float64) {
-	ms.m.Lock()
+	ms.mu.Lock()
+	defer ms.mu.Unlock()
 	ms.gauge[key] = value
-	ms.m.Unlock()
 }
 
 var ErrNotFound = fmt.Errorf("ErrNotFound")
 
 func (ms *MemStorage) GetValue(name string, kind string) (string, error) {
+	ms.mu.Lock()
+	defer ms.mu.Unlock()
 	switch kind {
 	case models.Gauge:
 		if value, ok := ms.gauge[name]; ok {
@@ -75,6 +77,8 @@ func (ms *MemStorage) GetValue(name string, kind string) (string, error) {
 }
 
 func (ms *MemStorage) GetGauge(name string) (float64, error) {
+	ms.mu.Lock()
+	defer ms.mu.Unlock()
 	if value, ok := ms.gauge[name]; ok {
 		return value, nil
 	}
@@ -82,6 +86,8 @@ func (ms *MemStorage) GetGauge(name string) (float64, error) {
 }
 
 func (ms *MemStorage) GetCounter(name string) (int64, error) {
+	ms.mu.Lock()
+	defer ms.mu.Unlock()
 	if value, ok := ms.counter[name]; ok {
 		return value, nil
 	}
@@ -89,8 +95,8 @@ func (ms *MemStorage) GetCounter(name string) (int64, error) {
 }
 
 func (ms *MemStorage) Snapshot() []models.Metrics {
-	ms.m.Lock()
-	defer ms.m.Unlock()
+	ms.mu.Lock()
+	defer ms.mu.Unlock()
 	snap := make([]models.Metrics, 0, len(ms.gauge)+len(ms.counter))
 	for id, value := range ms.gauge {
 		snap = append(snap, models.Metrics{ID: id, MType: models.Gauge, Value: &value})
@@ -114,8 +120,8 @@ func (ms *MemStorage) Dump(path string) error {
 
 func (ms *MemStorage) Restore(path string) error {
 	logger.Sugar.Infof("restoring metrics from %s", path)
-	ms.m.Lock()
-	defer ms.m.Unlock()
+	ms.mu.Lock()
+	defer ms.mu.Unlock()
 
 	data, err := os.ReadFile(path)
 	if err != nil {
