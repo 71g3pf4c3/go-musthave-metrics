@@ -1,6 +1,8 @@
 package repository
 
 import (
+	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -9,17 +11,19 @@ import (
 
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/logger"
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/models"
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 type Repository interface {
 	AddCounter(key string, value int64)
 	SetGauge(key string, value float64)
-	GetValue(key string) (string, error)
+	GetValue(key string, kind string) (string, error)
 	GetGauge(key string) (float64, error)
 	GetCounter(key string) (int64, error)
 	GetAllGauge() (map[string]float64, error)
 	GetAllCounter() (map[string]int64, error)
 	Dump(path string) error
+	Ping() error
 	Restore(path string) error
 }
 
@@ -27,6 +31,33 @@ type MemStorage struct {
 	gauge   map[string]float64
 	counter map[string]int64
 	mu      sync.RWMutex
+	ctx     context.Context
+}
+
+type PGStorage struct {
+	*MemStorage
+	db *sql.DB
+}
+
+func NewPGStorage(dsn string) (*PGStorage, error) {
+	db, err := sql.Open("pgx", dsn)
+	logger.Sugar.Infof("connected to postgres")
+	logger.Sugar.Debugf("connecting to postgres with dsn %s", dsn)
+	if err != nil {
+		return nil, err
+	}
+	return &PGStorage{
+		MemStorage: NewMemStorage(),
+		db:         db,
+	}, nil
+}
+
+func (p *PGStorage) Ping() error {
+	return p.db.PingContext(context.Background())
+}
+
+func (p *PGStorage) Close() error {
+	return p.db.Close()
 }
 
 func NewMemStorage() *MemStorage {
@@ -42,12 +73,16 @@ func (ms *MemStorage) AddCounter(key string, value int64) {
 	ms.counter[key] += value
 }
 
-func (ms *MemStorage) GetAllGauge() map[string]float64 {
-	return ms.gauge
+func (ms *MemStorage) GetAllGauge() (map[string]float64, error) {
+	return ms.gauge, nil
 }
 
-func (ms *MemStorage) GetAllCounter() map[string]int64 {
-	return ms.counter
+func (ms *MemStorage) Ping() error {
+	return nil
+}
+
+func (ms *MemStorage) GetAllCounter() (map[string]int64, error) {
+	return ms.counter, nil
 }
 
 func (ms *MemStorage) SetGauge(key string, value float64) {

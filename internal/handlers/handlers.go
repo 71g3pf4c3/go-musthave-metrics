@@ -14,11 +14,11 @@ import (
 )
 
 type MetricsServer struct {
-	repository *repository.MemStorage
+	repository repository.Repository
 }
 
-func NewMetricsServer(ms *repository.MemStorage) *MetricsServer {
-	return &MetricsServer{repository: ms}
+func NewMetricsServer(repo repository.Repository) *MetricsServer {
+	return &MetricsServer{repository: repo}
 }
 
 func (ms *MetricsServer) Dump(path string) error {
@@ -35,10 +35,52 @@ func MainPageHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("Welcome to go-musthave-metrics!"))
 }
 
+func (ms *MetricsServer) ReadyzHandler(w http.ResponseWriter, r *http.Request) {
+	logger.Sugar.Debug("Updating readiness probe")
+
+	body := "ok"
+
+	w.Header().Set("Content-Type", "text/plain")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(body))
+}
+
+func (ms *MetricsServer) HealthzHandler(w http.ResponseWriter, r *http.Request) {
+	logger.Sugar.Debug("Updating healthz probe")
+
+	body := "ok"
+
+	w.Header().Set("Content-Type", "text/plain")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(body))
+}
+
+func (ms *MetricsServer) PingHandler(w http.ResponseWriter, r *http.Request) {
+	logger.Sugar.Debug("Updating healthz probe")
+
+	w.Header().Set("Content-Type", "text/plain")
+
+	err := ms.repository.Ping()
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+	} else {
+		w.WriteHeader(http.StatusOK)
+	}
+
+}
+
 func (ms *MetricsServer) ListHandler(w http.ResponseWriter, r *http.Request) {
 	logger.Sugar.Debug("listing all metrics")
-	gauges := ms.repository.GetAllGauge()
-	counters := ms.repository.GetAllCounter()
+	gauges, err := ms.repository.GetAllGauge()
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	counters, err := ms.repository.GetAllCounter()
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
 
 	body := "<html><body><ul>"
 	for name, value := range gauges {

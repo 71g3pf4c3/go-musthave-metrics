@@ -20,8 +20,17 @@ func New(cfg *config.ServerConfig) *http.Server {
 		log.Fatalf("failed to initialize logger: %v", err)
 	}
 
-	storage := repository.NewMemStorage()
-	ms := handlers.NewMetricsServer(storage)
+	var repo repository.Repository
+	if cfg.DatabaseDSN != "" {
+		pgStore, err := repository.NewPGStorage(cfg.DatabaseDSN)
+		if err != nil {
+			log.Fatalf("failed to connect to database: %v", err)
+		}
+		repo = pgStore
+	} else {
+		repo = repository.NewMemStorage()
+	}
+	ms := handlers.NewMetricsServer(repo)
 
 	r := chi.NewRouter()
 
@@ -49,13 +58,15 @@ func New(cfg *config.ServerConfig) *http.Server {
 	r.Use(middleware.Recoverer)
 	r.Use(compress.CompressMiddleware)
 	r.Use(middleware.Timeout(60 * time.Second))
-
 	r.Use(middleware.StripSlashes)
 
 	r.Get("/", ms.ListHandler)
 	r.Get("/value/{kind}/{name}", ms.GetHandler)
 	r.Post("/update/{kind}/{name}/{value}", ms.UpdateHandler)
 	r.Post("/update", ms.JSONUpdateHandler)
+	r.Get("/readyz", ms.ReadyzHandler)
+	r.Get("/healthz", ms.HealthzHandler)
+	r.Get("/ping", ms.PingHandler)
 	r.Post("/value", ms.JSONGetHandler)
 
 	logger.Sugar.Infof("starting server on %s", cfg.Address)

@@ -21,6 +21,7 @@ type ServerConfig struct {
 	StoreInterval   int    `env:"STORE_INTERVAL"`
 	FileStoragePath string `env:"FILE_STORAGE_PATH"`
 	RestoreFlag     bool   `env:"RESTORE"`
+	DatabaseDSN     string `env:"DATABASE_DSN"`
 }
 
 func NewAgentConfig() *AgentConfig {
@@ -62,6 +63,7 @@ func NewServerConfig() *ServerConfig {
 	storeInterval := flag.Int("i", 300, "store interval in seconds (0 for synchronous writes)")
 	fileStoragePath := flag.String("f", "/tmp/metrics-db.json", "file storage path")
 	restoreFlag := flag.Bool("r", true, "restore data from file on startup")
+	databaseDSN := flag.String("d", "", "database dsn")
 	flag.Parse()
 
 	cfg := ServerConfig{
@@ -70,6 +72,7 @@ func NewServerConfig() *ServerConfig {
 		StoreInterval:   *storeInterval,
 		FileStoragePath: *fileStoragePath,
 		RestoreFlag:     *restoreFlag,
+		DatabaseDSN:     *databaseDSN,
 	}
 
 	var envCfg ServerConfig
@@ -84,6 +87,9 @@ func NewServerConfig() *ServerConfig {
 	}
 	if envCfg.StoreInterval != 0 {
 		cfg.StoreInterval = envCfg.StoreInterval
+	}
+	if envCfg.DatabaseDSN != "" {
+		cfg.DatabaseDSN = envCfg.DatabaseDSN
 	}
 	if envCfg.FileStoragePath != "" {
 		cfg.FileStoragePath = envCfg.FileStoragePath
