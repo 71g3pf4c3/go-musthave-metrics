@@ -6,14 +6,13 @@ import (
 	"testing"
 
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/config"
-	"github.com/71g3pf4c3/go-musthave-metrics/internal/server"
 )
 
 // newTestServer builds the real server (chi router + middleware + routes)
 // and returns its Handler for use with httptest.
 func newTestServer() http.Handler {
 	cfg := &config.ServerConfig{Address: "localhost:0"}
-	return server.New(cfg).Handler
+	return newServer(cfg).Handler
 }
 
 func TestAddGaugeMetric(t *testing.T) {

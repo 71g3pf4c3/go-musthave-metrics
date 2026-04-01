@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"context"
 	"testing"
 
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/models"
@@ -15,9 +16,9 @@ func TestNewStorage(t *testing.T) {
 
 func TestSetGauge(t *testing.T) {
 	ms := NewMemStorage()
-	ms.SetGauge("cpu", 42.5)
+	_ = ms.SetGauge(context.Background(), "cpu", 42.5)
 
-	v, err := ms.GetValue("cpu", models.Gauge)
+	v, err := ms.GetValue(context.Background(), "cpu", models.Gauge)
 	if err != nil {
 		t.Fatalf("unexpected error reading gauge: %v", err)
 	}
@@ -29,7 +30,7 @@ func TestSetGauge(t *testing.T) {
 func TestSetGaugeWrong(t *testing.T) {
 	ms := NewMemStorage()
 	// Reading a key that was never set must return an error.
-	_, err := ms.GetValue("nonexistent_gauge", models.Gauge)
+	_, err := ms.GetValue(context.Background(), "nonexistent_gauge", models.Gauge)
 	if err == nil {
 		t.Error("expected error for nonexistent key, got nil")
 	}
@@ -37,9 +38,9 @@ func TestSetGaugeWrong(t *testing.T) {
 
 func TestAddNewCounter(t *testing.T) {
 	ms := NewMemStorage()
-	ms.AddCounter("requests", 1)
+	_ = ms.AddCounter(context.Background(), "requests", 1)
 
-	v, err := ms.GetValue("requests", models.Counter)
+	v, err := ms.GetValue(context.Background(), "requests", models.Counter)
 	if err != nil {
 		t.Fatalf("unexpected error reading counter: %v", err)
 	}
@@ -51,7 +52,7 @@ func TestAddNewCounter(t *testing.T) {
 func TestAddNewCounterWrong(t *testing.T) {
 	ms := NewMemStorage()
 	// Reading a counter that was never set must return an error.
-	_, err := ms.GetValue("nonexistent_counter", models.Counter)
+	_, err := ms.GetValue(context.Background(), "nonexistent_counter", models.Counter)
 	if err == nil {
 		t.Error("expected error for nonexistent counter key, got nil")
 	}
@@ -59,10 +60,10 @@ func TestAddNewCounterWrong(t *testing.T) {
 
 func TestAddExistingCounter(t *testing.T) {
 	ms := NewMemStorage()
-	ms.AddCounter("hits", 10)
-	ms.AddCounter("hits", 5)
+	_ = ms.AddCounter(context.Background(), "hits", 10)
+	_ = ms.AddCounter(context.Background(), "hits", 5)
 
-	v, err := ms.GetValue("hits", models.Counter)
+	v, err := ms.GetValue(context.Background(), "hits", models.Counter)
 	if err != nil {
 		t.Fatalf("unexpected error reading counter: %v", err)
 	}
@@ -75,10 +76,10 @@ func TestAddExistingCounterWrong(t *testing.T) {
 	ms := NewMemStorage()
 	// Gauge and counter use separate maps, so setting a gauge under "mixed"
 	// and then adding a counter under the same key stores 5 in the counter map.
-	ms.SetGauge("mixed", 99.9)
-	ms.AddCounter("mixed", 5)
+	_ = ms.SetGauge(context.Background(), "mixed", 99.9)
+	_ = ms.AddCounter(context.Background(), "mixed", 5)
 
-	v, err := ms.GetValue("mixed", models.Counter)
+	v, err := ms.GetValue(context.Background(), "mixed", models.Counter)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -89,9 +90,9 @@ func TestAddExistingCounterWrong(t *testing.T) {
 
 func TestGetValueGauge(t *testing.T) {
 	ms := NewMemStorage()
-	ms.SetGauge("cpu", 42.5)
+	_ = ms.SetGauge(context.Background(), "cpu", 42.5)
 
-	v, err := ms.GetValue("cpu", models.Gauge)
+	v, err := ms.GetValue(context.Background(), "cpu", models.Gauge)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -102,9 +103,9 @@ func TestGetValueGauge(t *testing.T) {
 
 func TestGetValueCounter(t *testing.T) {
 	ms := NewMemStorage()
-	ms.AddCounter("requests", 100)
+	_ = ms.AddCounter(context.Background(), "requests", 100)
 
-	v, err := ms.GetValue("requests", models.Counter)
+	v, err := ms.GetValue(context.Background(), "requests", models.Counter)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -115,10 +116,10 @@ func TestGetValueCounter(t *testing.T) {
 
 func TestGetValueCounterAccumulated(t *testing.T) {
 	ms := NewMemStorage()
-	ms.AddCounter("hits", 10)
-	ms.AddCounter("hits", 5)
+	_ = ms.AddCounter(context.Background(), "hits", 10)
+	_ = ms.AddCounter(context.Background(), "hits", 5)
 
-	v, err := ms.GetValue("hits", models.Counter)
+	v, err := ms.GetValue(context.Background(), "hits", models.Counter)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -130,7 +131,7 @@ func TestGetValueCounterAccumulated(t *testing.T) {
 func TestGetValueGaugeNotFound(t *testing.T) {
 	ms := NewMemStorage()
 
-	_, err := ms.GetValue("nonexistent", models.Gauge)
+	_, err := ms.GetValue(context.Background(), "nonexistent", models.Gauge)
 	if err == nil {
 		t.Error("expected error for nonexistent gauge key, got nil")
 	}
@@ -139,7 +140,7 @@ func TestGetValueGaugeNotFound(t *testing.T) {
 func TestGetValueCounterNotFound(t *testing.T) {
 	ms := NewMemStorage()
 
-	_, err := ms.GetValue("nonexistent", models.Counter)
+	_, err := ms.GetValue(context.Background(), "nonexistent", models.Counter)
 	if err == nil {
 		t.Error("expected error for nonexistent counter key, got nil")
 	}
@@ -147,9 +148,9 @@ func TestGetValueCounterNotFound(t *testing.T) {
 
 func TestGetValueUnknownKind(t *testing.T) {
 	ms := NewMemStorage()
-	ms.SetGauge("cpu", 1.0)
+	_ = ms.SetGauge(context.Background(), "cpu", 1.0)
 
-	_, err := ms.GetValue("cpu", "histogram")
+	_, err := ms.GetValue(context.Background(), "cpu", "histogram")
 	if err == nil {
 		t.Error("expected error for unknown metric kind, got nil")
 	}

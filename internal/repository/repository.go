@@ -15,16 +15,16 @@ import (
 )
 
 type Repository interface {
-	AddCounter(key string, value int64)
-	SetGauge(key string, value float64)
-	GetValue(key string, kind string) (string, error)
-	GetGauge(key string) (float64, error)
-	GetCounter(key string) (int64, error)
-	GetAllGauge() (map[string]float64, error)
-	GetAllCounter() (map[string]int64, error)
-	Dump(path string) error
-	Ping() error
-	Restore(path string) error
+	AddCounter(ctx context.Context, key string, value int64) error
+	SetGauge(ctx context.Context, key string, value float64) error
+	GetValue(ctx context.Context, key string, kind string) (string, error)
+	GetGauge(ctx context.Context, key string) (float64, error)
+	GetCounter(ctx context.Context, key string) (int64, error)
+	GetAllGauge(ctx context.Context) (map[string]float64, error)
+	GetAllCounter(ctx context.Context) (map[string]int64, error)
+	Dump(ctx context.Context, path string) error
+	Ping(ctx context.Context) error
+	Restore(ctx context.Context, path string) error
 }
 
 type MemStorage struct {
@@ -52,8 +52,11 @@ func NewPGStorage(dsn string) (*PGStorage, error) {
 	}, nil
 }
 
-func (p *PGStorage) Ping() error {
-	return p.db.PingContext(context.Background())
+func (p *PGStorage) Ping(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return p.db.PingContext(ctx)
 }
 
 func (p *PGStorage) Close() error {
@@ -67,33 +70,35 @@ func NewMemStorage() *MemStorage {
 	}
 }
 
-func (ms *MemStorage) AddCounter(key string, value int64) {
+func (ms *MemStorage) AddCounter(_ context.Context, key string, value int64) error {
 	ms.mu.Lock()
 	defer ms.mu.Unlock()
 	ms.counter[key] += value
-}
-
-func (ms *MemStorage) GetAllGauge() (map[string]float64, error) {
-	return ms.gauge, nil
-}
-
-func (ms *MemStorage) Ping() error {
 	return nil
 }
 
-func (ms *MemStorage) GetAllCounter() (map[string]int64, error) {
+func (ms *MemStorage) GetAllGauge(_ context.Context) (map[string]float64, error) {
+	return ms.gauge, nil
+}
+
+func (ms *MemStorage) Ping(_ context.Context) error {
+	return nil
+}
+
+func (ms *MemStorage) GetAllCounter(_ context.Context) (map[string]int64, error) {
 	return ms.counter, nil
 }
 
-func (ms *MemStorage) SetGauge(key string, value float64) {
+func (ms *MemStorage) SetGauge(_ context.Context, key string, value float64) error {
 	ms.mu.Lock()
 	defer ms.mu.Unlock()
 	ms.gauge[key] = value
+	return nil
 }
 
 var ErrNotFound = fmt.Errorf("ErrNotFound")
 
-func (ms *MemStorage) GetValue(name string, kind string) (string, error) {
+func (ms *MemStorage) GetValue(_ context.Context, name string, kind string) (string, error) {
 	ms.mu.Lock()
 	defer ms.mu.Unlock()
 	switch kind {
@@ -111,7 +116,7 @@ func (ms *MemStorage) GetValue(name string, kind string) (string, error) {
 	return "", fmt.Errorf("UnexpectedError")
 }
 
-func (ms *MemStorage) GetGauge(name string) (float64, error) {
+func (ms *MemStorage) GetGauge(_ context.Context, name string) (float64, error) {
 	ms.mu.Lock()
 	defer ms.mu.Unlock()
 	if value, ok := ms.gauge[name]; ok {
@@ -120,7 +125,7 @@ func (ms *MemStorage) GetGauge(name string) (float64, error) {
 	return 0, ErrNotFound
 }
 
-func (ms *MemStorage) GetCounter(name string) (int64, error) {
+func (ms *MemStorage) GetCounter(_ context.Context, name string) (int64, error) {
 	ms.mu.Lock()
 	defer ms.mu.Unlock()
 	if value, ok := ms.counter[name]; ok {
@@ -142,7 +147,7 @@ func (ms *MemStorage) Snapshot() []models.Metrics {
 	return snap
 }
 
-func (ms *MemStorage) Dump(path string) error {
+func (ms *MemStorage) Dump(_ context.Context, path string) error {
 	snap := ms.Snapshot()
 	logger.Sugar.Infof("dumping %d metrics to %s", len(snap), path)
 	data, err := json.MarshalIndent(snap, "", "   ")
@@ -153,7 +158,7 @@ func (ms *MemStorage) Dump(path string) error {
 	return os.WriteFile(path, data, 0666)
 }
 
-func (ms *MemStorage) Restore(path string) error {
+func (ms *MemStorage) Restore(_ context.Context, path string) error {
 	logger.Sugar.Infof("restoring metrics from %s", path)
 	ms.mu.Lock()
 	defer ms.mu.Unlock()
