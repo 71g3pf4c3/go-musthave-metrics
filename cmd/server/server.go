@@ -19,6 +19,9 @@ func newServer(cfg *config.ServerConfig) *http.Server {
 	}
 
 	var repo repository.Repository
+	useFileStorage := cfg.FileStoragePath != ""
+	useDBStorage := cfg.DatabaseDSN != ""
+
 	if cfg.DatabaseDSN != "" {
 		pgStore, err := repository.NewPGStorage(cfg.DatabaseDSN)
 		if err != nil {
@@ -32,13 +35,13 @@ func newServer(cfg *config.ServerConfig) *http.Server {
 	svc := service.New(repo)
 	h := handlers.NewMetricsHandler(svc)
 
-	if cfg.RestoreFlag {
+	if !useDBStorage && useFileStorage && cfg.RestoreFlag {
 		if err := svc.Restore(context.Background(), cfg.FileStoragePath); err != nil {
 			logger.Sugar.Infof("restore from %s: %v", cfg.FileStoragePath, err)
 		}
 	}
 
-	if cfg.StoreInterval > 0 {
+	if !useDBStorage && useFileStorage && cfg.StoreInterval > 0 {
 		logger.Sugar.Infof("periodic dump enabled every %ds to %s", cfg.StoreInterval, cfg.FileStoragePath)
 		dumpTicker := time.NewTicker(time.Duration(cfg.StoreInterval) * time.Second)
 		go func() {

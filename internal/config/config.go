@@ -61,7 +61,7 @@ func NewServerConfig() *ServerConfig {
 	addressFlag := flag.String("a", "localhost:8080", "server listen address")
 	logLevel := flag.String("l", "info", "server log level")
 	storeInterval := flag.Int("i", 300, "store interval in seconds (0 for synchronous writes)")
-	fileStoragePath := flag.String("f", "/tmp/metrics-db.json", "file storage path")
+	fileStoragePath := flag.String("f", "", "file storage path")
 	restoreFlag := flag.Bool("r", true, "restore data from file on startup")
 	databaseDSN := flag.String("d", "", "database dsn")
 	flag.Parse()

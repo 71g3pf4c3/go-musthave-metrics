@@ -11,6 +11,17 @@ import (
 
 var ErrBadRequest = errors.New("bad request")
 
+type Service interface {
+	Dump(ctx context.Context, path string) error
+	Restore(ctx context.Context, path string) error
+	Ping(ctx context.Context) error
+	List(ctx context.Context) (map[string]float64, map[string]int64, error)
+	GetValue(ctx context.Context, kind string, name string) (string, error)
+	Update(ctx context.Context, kind string, name string, value string) error
+	JSONUpdate(ctx context.Context, metric models.Metrics) error
+	JSONGet(ctx context.Context, metric models.Metrics) (models.Metrics, error)
+}
+
 type MetricsService struct {
 	repo repository.Repository
 }
