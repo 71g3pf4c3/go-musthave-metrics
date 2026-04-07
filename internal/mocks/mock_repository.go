@@ -8,6 +8,7 @@ import (
 	context "context"
 	reflect "reflect"
 
+	models "github.com/71g3pf4c3/go-musthave-metrics/internal/models"
 	gomock "github.com/golang/mock/gomock"
 )
 
@@ -177,4 +178,18 @@ func (m *MockRepository) SetGauge(ctx context.Context, key string, value float64
 func (mr *MockRepositoryMockRecorder) SetGauge(ctx, key, value interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetGauge", reflect.TypeOf((*MockRepository)(nil).SetGauge), ctx, key, value)
+}
+
+// UpdateBatch mocks base method.
+func (m *MockRepository) UpdateBatch(ctx context.Context, metrics []models.Metrics) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateBatch", ctx, metrics)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpdateBatch indicates an expected call of UpdateBatch.
+func (mr *MockRepositoryMockRecorder) UpdateBatch(ctx, metrics interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateBatch", reflect.TypeOf((*MockRepository)(nil).UpdateBatch), ctx, metrics)
 }

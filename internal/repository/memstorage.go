@@ -149,3 +149,27 @@ func (ms *MemStorage) Restore(_ context.Context, path string) error {
 	logger.Sugar.Infof("restored %d metrics", len(metrics))
 	return nil
 }
+
+func (ms *MemStorage) UpdateBatch(_ context.Context, metrics []models.Metrics) error {
+	ms.mu.Lock()
+	defer ms.mu.Unlock()
+
+	for _, metric := range metrics {
+		switch metric.MType {
+		case models.Gauge:
+			if metric.Value == nil {
+				return fmt.Errorf("invalid gauge metric")
+			}
+			ms.gauge[metric.ID] = *metric.Value
+		case models.Counter:
+			if metric.Delta == nil {
+				return fmt.Errorf("invalid counter metric")
+			}
+			ms.counter[metric.ID] += *metric.Delta
+		default:
+			return fmt.Errorf("unsupported metric type")
+		}
+	}
+
+	return nil
+}

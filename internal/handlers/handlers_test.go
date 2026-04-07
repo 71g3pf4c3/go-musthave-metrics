@@ -573,3 +573,54 @@ func TestJsonGetHandlerContentType(t *testing.T) {
 		t.Errorf("expected Content-Type application/json, got %q", ct)
 	}
 }
+
+func TestBatchUpdateHandlerSuccess(t *testing.T) {
+	h := newHandler()
+	v := 42.5
+	delta := int64(10)
+	batch := []models.Metrics{
+		{ID: "cpu", MType: models.Gauge, Value: &v},
+		{ID: "hits", MType: models.Counter, Delta: &delta},
+	}
+	body, _ := json.Marshal(batch)
+
+	r := httptest.NewRequest(http.MethodPost, "/updates", strings.NewReader(string(body)))
+	r.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	h.BatchUpdateHandler(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	rw := httptest.NewRecorder()
+	h.GetHandler(rw, makeGetRequest("gauge", "cpu"))
+	if rw.Body.String() != "42.5" {
+		t.Fatalf("expected gauge 42.5, got %q", rw.Body.String())
+	}
+}
+
+func TestBatchUpdateHandlerEmptyBatch(t *testing.T) {
+	h := newHandler()
+	r := httptest.NewRequest(http.MethodPost, "/updates", strings.NewReader("[]"))
+	r.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	h.BatchUpdateHandler(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+}
+
+func TestBatchUpdateHandlerBadRequest(t *testing.T) {
+	h := newHandler()
+	invalid := `[ {"id":"cpu", "type":"gauge"} ]`
+	r := httptest.NewRequest(http.MethodPost, "/updates", strings.NewReader(invalid))
+	r.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	h.BatchUpdateHandler(w, r)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}

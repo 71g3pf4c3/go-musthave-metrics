@@ -3,6 +3,8 @@ package repository
 import (
 	"context"
 	"fmt"
+
+	"github.com/71g3pf4c3/go-musthave-metrics/internal/models"
 )
 
 type Repository interface {
@@ -16,6 +18,7 @@ type Repository interface {
 	Dump(ctx context.Context, path string) error
 	Ping(ctx context.Context) error
 	Restore(ctx context.Context, path string) error
+	UpdateBatch(ctx context.Context, metrics []models.Metrics) error
 }
 
 var ErrNotFound = fmt.Errorf("ErrNotFound")

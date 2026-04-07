@@ -198,3 +198,35 @@ func (h *MetricsHandler) JSONGetHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 }
+
+func (h *MetricsHandler) BatchUpdateHandler(w http.ResponseWriter, r *http.Request) {
+	logger.Sugar.Debug("decoding batch request")
+
+	var metrics []models.Metrics
+	dec := json.NewDecoder(r.Body)
+	if err := dec.Decode(&metrics); err != nil {
+		logger.Sugar.Debug("cannot decode batch JSON body", zap.Error(err))
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	if len(metrics) == 0 {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	err := h.service.BatchUpdate(r.Context(), metrics)
+	if err != nil {
+		if errors.Is(err, service.ErrBadRequest) {
+			logger.Sugar.Debug("invalid batch request", zap.Error(err))
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		logger.Sugar.Debug("failed to batch update metrics", zap.Error(err))
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+}

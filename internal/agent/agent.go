@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"maps"
 	"math/rand"
+	"net/http"
 	"runtime"
 	"sync"
 	"time"
@@ -86,29 +87,69 @@ func (a *Agent) Report() {
 	pollCount := a.pollCount
 	a.m.Unlock()
 
-	logger.Sugar.Infof("reporting %d gauge metrics and PollCount=%d", len(gauges), pollCount)
-
+	batch := make([]models.Metrics, 0, len(gauges)+1)
 	for name, value := range gauges {
 		v := value
-		metric := models.Metrics{
+		batch = append(batch, models.Metrics{
 			ID:    name,
 			MType: models.Gauge,
 			Value: &v,
-		}
-		if err := a.sendMetric(metric); err != nil {
-			logger.Sugar.Errorf("send gauge %s: %v", name, err)
-		}
+		})
 	}
 
-	metric := models.Metrics{
+	batch = append(batch, models.Metrics{
 		ID:    "PollCount",
 		MType: models.Counter,
 		Delta: &pollCount,
+	})
+
+	if len(batch) == 0 {
+		logger.Sugar.Debug("skip empty batch")
+		return
 	}
-	if err := a.sendMetric(metric); err != nil {
-		logger.Sugar.Errorf("send counter PollCount: %v", err)
+
+	logger.Sugar.Infof("reporting %d metrics in batch", len(batch))
+	if err := a.sendBatch(batch); err != nil {
+		logger.Sugar.Errorf("send batch failed, fallback to single metrics: %v", err)
+		for _, metric := range batch {
+			if err := a.sendMetric(metric); err != nil {
+				logger.Sugar.Errorf("fallback send %s/%s: %v", metric.MType, metric.ID, err)
+			}
+		}
 	}
+
 	logger.Sugar.Debug("report complete")
+}
+
+func (a *Agent) sendBatch(metrics []models.Metrics) error {
+	data, err := json.Marshal(metrics)
+	if err != nil {
+		return fmt.Errorf("marshal batch: %w", err)
+	}
+
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	if _, err := gz.Write(data); err != nil {
+		return fmt.Errorf("gzip write batch: %w", err)
+	}
+	if err := gz.Close(); err != nil {
+		return fmt.Errorf("gzip close batch: %w", err)
+	}
+
+	resp, err := a.client.R().
+		SetHeader("Content-Type", "application/json").
+		SetHeader("Content-Encoding", "gzip").
+		SetHeader("Accept-Encoding", "gzip").
+		SetBody(buf.Bytes()).
+		Post(fmt.Sprintf("%s/updates", a.serverAddr))
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode() >= http.StatusBadRequest {
+		return fmt.Errorf("batch request failed with status %d", resp.StatusCode())
+	}
+
+	return nil
 }
 
 func (a *Agent) sendMetric(metric models.Metrics) error {
@@ -127,13 +168,20 @@ func (a *Agent) sendMetric(metric models.Metrics) error {
 		return fmt.Errorf("gzip close: %w", err)
 	}
 
-	_, err = a.client.R().
+	resp, err := a.client.R().
 		SetHeader("Content-Type", "application/json").
 		SetHeader("Content-Encoding", "gzip").
 		SetHeader("Accept-Encoding", "gzip").
 		SetBody(buf.Bytes()).
 		Post(fmt.Sprintf("%s/update", a.serverAddr))
-	return err
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode() >= http.StatusBadRequest {
+		return fmt.Errorf("single metric request failed with status %d", resp.StatusCode())
+	}
+
+	return nil
 }
 
 func (a *Agent) Run() {

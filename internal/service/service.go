@@ -20,6 +20,7 @@ type Service interface {
 	Update(ctx context.Context, kind string, name string, value string) error
 	JSONUpdate(ctx context.Context, metric models.Metrics) error
 	JSONGet(ctx context.Context, metric models.Metrics) (models.Metrics, error)
+	BatchUpdate(ctx context.Context, metrics []models.Metrics) error
 }
 
 type MetricsService struct {
@@ -113,4 +114,27 @@ func (s *MetricsService) JSONGet(ctx context.Context, metric models.Metrics) (mo
 	default:
 		return models.Metrics{}, ErrBadRequest
 	}
+}
+
+func (s *MetricsService) BatchUpdate(ctx context.Context, metrics []models.Metrics) error {
+	if len(metrics) == 0 {
+		return nil
+	}
+
+	for _, metric := range metrics {
+		switch metric.MType {
+		case models.Gauge:
+			if metric.Value == nil {
+				return ErrBadRequest
+			}
+		case models.Counter:
+			if metric.Delta == nil {
+				return ErrBadRequest
+			}
+		default:
+			return ErrBadRequest
+		}
+	}
+
+	return s.repo.UpdateBatch(ctx, metrics)
 }

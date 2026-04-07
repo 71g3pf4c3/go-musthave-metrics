@@ -219,6 +219,54 @@ func (p *PGStorage) GetAllCounter(ctx context.Context) (map[string]int64, error)
 	return result, nil
 }
 
+func (p *PGStorage) UpdateBatch(ctx context.Context, metrics []models.Metrics) error {
+	if len(metrics) == 0 {
+		return nil
+	}
+
+	tx, err := p.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+
+	defer func() {
+		_ = tx.Rollback()
+	}()
+
+	for _, metric := range metrics {
+		switch metric.MType {
+		case models.Gauge:
+			if metric.Value == nil {
+				return fmt.Errorf("invalid gauge metric")
+			}
+			if _, err := tx.ExecContext(ctx, `
+				INSERT INTO metrics (name, kind, value_double)
+				VALUES ($1, $2, $3)
+				ON CONFLICT (name, kind)
+				DO UPDATE SET value_double = EXCLUDED.value_double
+			`, metric.ID, models.Gauge, *metric.Value); err != nil {
+				return err
+			}
+		case models.Counter:
+			if metric.Delta == nil {
+				return fmt.Errorf("invalid counter metric")
+			}
+			if _, err := tx.ExecContext(ctx, `
+				INSERT INTO metrics (name, kind, value_bigint)
+				VALUES ($1, $2, $3)
+				ON CONFLICT (name, kind)
+				DO UPDATE SET value_bigint = metrics.value_bigint + EXCLUDED.value_bigint
+			`, metric.ID, models.Counter, *metric.Delta); err != nil {
+				return err
+			}
+		default:
+			return fmt.Errorf("unsupported metric type")
+		}
+	}
+
+	return tx.Commit()
+}
+
 func (p *PGStorage) Dump(ctx context.Context, path string) error {
 	return nil
 }
