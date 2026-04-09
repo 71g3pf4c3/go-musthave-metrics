@@ -28,6 +28,8 @@ type Agent struct {
 	m              sync.Mutex
 }
 
+var agentRetryDelays = []time.Duration{time.Second, 3 * time.Second, 5 * time.Second}
+
 func New(config config.AgentConfig) *Agent {
 	logger.Sugar.Infof("initializing agent, server=%s, poll=%ds, report=%ds",
 		config.Address, config.PollInterval, config.ReportInterval)
@@ -136,20 +138,28 @@ func (a *Agent) sendBatch(metrics []models.Metrics) error {
 		return fmt.Errorf("gzip close batch: %w", err)
 	}
 
-	resp, err := a.client.R().
-		SetHeader("Content-Type", "application/json").
-		SetHeader("Content-Encoding", "gzip").
-		SetHeader("Accept-Encoding", "gzip").
-		SetBody(buf.Bytes()).
-		Post(fmt.Sprintf("%s/updates", a.serverAddr))
-	if err != nil {
-		return err
-	}
-	if resp.StatusCode() >= http.StatusBadRequest {
-		return fmt.Errorf("batch request failed with status %d", resp.StatusCode())
-	}
+	for attempt := 0; ; attempt++ {
+		resp, err := a.client.R().
+			SetHeader("Content-Type", "application/json").
+			SetHeader("Content-Encoding", "gzip").
+			SetHeader("Accept-Encoding", "gzip").
+			SetBody(buf.Bytes()).
+			Post(fmt.Sprintf("%s/updates", a.serverAddr))
+		if err == nil {
+			if resp.StatusCode() >= http.StatusBadRequest {
+				return fmt.Errorf("batch request failed with status %d", resp.StatusCode())
+			}
+			return nil
+		}
 
-	return nil
+		if attempt >= len(agentRetryDelays) {
+			return err
+		}
+
+		delay := agentRetryDelays[attempt]
+		logger.Sugar.Infof("batch send retry attempt=%d in %s: %v", attempt+1, delay, err)
+		time.Sleep(delay)
+	}
 }
 
 func (a *Agent) sendMetric(metric models.Metrics) error {
@@ -168,20 +178,28 @@ func (a *Agent) sendMetric(metric models.Metrics) error {
 		return fmt.Errorf("gzip close: %w", err)
 	}
 
-	resp, err := a.client.R().
-		SetHeader("Content-Type", "application/json").
-		SetHeader("Content-Encoding", "gzip").
-		SetHeader("Accept-Encoding", "gzip").
-		SetBody(buf.Bytes()).
-		Post(fmt.Sprintf("%s/update", a.serverAddr))
-	if err != nil {
-		return err
-	}
-	if resp.StatusCode() >= http.StatusBadRequest {
-		return fmt.Errorf("single metric request failed with status %d", resp.StatusCode())
-	}
+	for attempt := 0; ; attempt++ {
+		resp, err := a.client.R().
+			SetHeader("Content-Type", "application/json").
+			SetHeader("Content-Encoding", "gzip").
+			SetHeader("Accept-Encoding", "gzip").
+			SetBody(buf.Bytes()).
+			Post(fmt.Sprintf("%s/update", a.serverAddr))
+		if err == nil {
+			if resp.StatusCode() >= http.StatusBadRequest {
+				return fmt.Errorf("single metric request failed with status %d", resp.StatusCode())
+			}
+			return nil
+		}
 
-	return nil
+		if attempt >= len(agentRetryDelays) {
+			return err
+		}
+
+		delay := agentRetryDelays[attempt]
+		logger.Sugar.Infof("single metric retry attempt=%d in %s: %v", attempt+1, delay, err)
+		time.Sleep(delay)
+	}
 }
 
 func (a *Agent) Run() {
