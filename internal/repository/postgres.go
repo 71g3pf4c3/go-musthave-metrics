@@ -13,6 +13,8 @@ import (
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
+	"github.com/jackc/pgerrcode"
+	"github.com/jackc/pgx/v5/pgconn"
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
@@ -20,6 +22,8 @@ const (
 	defaultMigrateAttempts = 20
 	defaultMigrateTimeout  = time.Second
 )
+
+var pgRetryDelays = []time.Duration{time.Second, 3 * time.Second, 5 * time.Second}
 
 type PGStorage struct {
 	db *sql.DB
@@ -97,7 +101,9 @@ func (p *PGStorage) Ping(ctx context.Context) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	return p.db.PingContext(ctx)
+	return withPGRetry(ctx, func(ctx context.Context) error {
+		return p.db.PingContext(ctx)
+	})
 }
 
 func (p *PGStorage) Close() error {
@@ -105,23 +111,27 @@ func (p *PGStorage) Close() error {
 }
 
 func (p *PGStorage) AddCounter(ctx context.Context, key string, value int64) error {
-	_, err := p.db.ExecContext(ctx, `
-		INSERT INTO metrics (name, kind, value_bigint)
-		VALUES ($1, $2, $3)
-		ON CONFLICT (name, kind)
-		DO UPDATE SET value_bigint = metrics.value_bigint + EXCLUDED.value_bigint
-	`, key, models.Counter, value)
-	return err
+	return withPGRetry(ctx, func(ctx context.Context) error {
+		_, err := p.db.ExecContext(ctx, `
+			INSERT INTO metrics (name, kind, value_bigint)
+			VALUES ($1, $2, $3)
+			ON CONFLICT (name, kind)
+			DO UPDATE SET value_bigint = metrics.value_bigint + EXCLUDED.value_bigint
+		`, key, models.Counter, value)
+		return err
+	})
 }
 
 func (p *PGStorage) SetGauge(ctx context.Context, key string, value float64) error {
-	_, err := p.db.ExecContext(ctx, `
-		INSERT INTO metrics (name, kind, value_double)
-		VALUES ($1, $2, $3)
-		ON CONFLICT (name, kind)
-		DO UPDATE SET value_double = EXCLUDED.value_double
-	`, key, models.Gauge, value)
-	return err
+	return withPGRetry(ctx, func(ctx context.Context) error {
+		_, err := p.db.ExecContext(ctx, `
+			INSERT INTO metrics (name, kind, value_double)
+			VALUES ($1, $2, $3)
+			ON CONFLICT (name, kind)
+			DO UPDATE SET value_double = EXCLUDED.value_double
+		`, key, models.Gauge, value)
+		return err
+	})
 }
 
 func (p *PGStorage) GetValue(ctx context.Context, key string, kind string) (string, error) {
@@ -145,9 +155,11 @@ func (p *PGStorage) GetValue(ctx context.Context, key string, kind string) (stri
 
 func (p *PGStorage) GetGauge(ctx context.Context, key string) (float64, error) {
 	var value float64
-	err := p.db.QueryRowContext(ctx, `
-		SELECT value_double FROM metrics WHERE name = $1 AND kind = $2
-	`, key, models.Gauge).Scan(&value)
+	err := withPGRetry(ctx, func(ctx context.Context) error {
+		return p.db.QueryRowContext(ctx, `
+			SELECT value_double FROM metrics WHERE name = $1 AND kind = $2
+		`, key, models.Gauge).Scan(&value)
+	})
 	if err != nil {
 		if stderrs.Is(err, sql.ErrNoRows) {
 			return 0, ErrNotFound
@@ -159,9 +171,11 @@ func (p *PGStorage) GetGauge(ctx context.Context, key string) (float64, error) {
 
 func (p *PGStorage) GetCounter(ctx context.Context, key string) (int64, error) {
 	var value int64
-	err := p.db.QueryRowContext(ctx, `
-		SELECT value_bigint FROM metrics WHERE name = $1 AND kind = $2
-	`, key, models.Counter).Scan(&value)
+	err := withPGRetry(ctx, func(ctx context.Context) error {
+		return p.db.QueryRowContext(ctx, `
+			SELECT value_bigint FROM metrics WHERE name = $1 AND kind = $2
+		`, key, models.Counter).Scan(&value)
+	})
 	if err != nil {
 		if stderrs.Is(err, sql.ErrNoRows) {
 			return 0, ErrNotFound
@@ -172,50 +186,58 @@ func (p *PGStorage) GetCounter(ctx context.Context, key string) (int64, error) {
 }
 
 func (p *PGStorage) GetAllGauge(ctx context.Context) (map[string]float64, error) {
-	rows, err := p.db.QueryContext(ctx, `
-		SELECT name, value_double FROM metrics WHERE kind = $1
-	`, models.Gauge)
+	result := make(map[string]float64)
+	err := withPGRetry(ctx, func(ctx context.Context) error {
+		rows, err := p.db.QueryContext(ctx, `
+			SELECT name, value_double FROM metrics WHERE kind = $1
+		`, models.Gauge)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+
+		for rows.Next() {
+			var name string
+			var value float64
+			if err := rows.Scan(&name, &value); err != nil {
+				return err
+			}
+			result[name] = value
+		}
+		return rows.Err()
+	})
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 
-	result := make(map[string]float64)
-	for rows.Next() {
-		var name string
-		var value float64
-		if err := rows.Scan(&name, &value); err != nil {
-			return nil, err
-		}
-		result[name] = value
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
 	return result, nil
 }
 
 func (p *PGStorage) GetAllCounter(ctx context.Context) (map[string]int64, error) {
-	rows, err := p.db.QueryContext(ctx, `
-		SELECT name, value_bigint FROM metrics WHERE kind = $1
-	`, models.Counter)
+	result := make(map[string]int64)
+	err := withPGRetry(ctx, func(ctx context.Context) error {
+		rows, err := p.db.QueryContext(ctx, `
+			SELECT name, value_bigint FROM metrics WHERE kind = $1
+		`, models.Counter)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+
+		for rows.Next() {
+			var name string
+			var value int64
+			if err := rows.Scan(&name, &value); err != nil {
+				return err
+			}
+			result[name] = value
+		}
+		return rows.Err()
+	})
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 
-	result := make(map[string]int64)
-	for rows.Next() {
-		var name string
-		var value int64
-		if err := rows.Scan(&name, &value); err != nil {
-			return nil, err
-		}
-		result[name] = value
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
 	return result, nil
 }
 
@@ -224,47 +246,49 @@ func (p *PGStorage) UpdateBatch(ctx context.Context, metrics []models.Metrics) e
 		return nil
 	}
 
-	tx, err := p.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-
-	defer func() {
-		_ = tx.Rollback()
-	}()
-
-	for _, metric := range metrics {
-		switch metric.MType {
-		case models.Gauge:
-			if metric.Value == nil {
-				return fmt.Errorf("invalid gauge metric")
-			}
-			if _, err := tx.ExecContext(ctx, `
-				INSERT INTO metrics (name, kind, value_double)
-				VALUES ($1, $2, $3)
-				ON CONFLICT (name, kind)
-				DO UPDATE SET value_double = EXCLUDED.value_double
-			`, metric.ID, models.Gauge, *metric.Value); err != nil {
-				return err
-			}
-		case models.Counter:
-			if metric.Delta == nil {
-				return fmt.Errorf("invalid counter metric")
-			}
-			if _, err := tx.ExecContext(ctx, `
-				INSERT INTO metrics (name, kind, value_bigint)
-				VALUES ($1, $2, $3)
-				ON CONFLICT (name, kind)
-				DO UPDATE SET value_bigint = metrics.value_bigint + EXCLUDED.value_bigint
-			`, metric.ID, models.Counter, *metric.Delta); err != nil {
-				return err
-			}
-		default:
-			return fmt.Errorf("unsupported metric type")
+	return withPGRetry(ctx, func(ctx context.Context) error {
+		tx, err := p.db.BeginTx(ctx, nil)
+		if err != nil {
+			return err
 		}
-	}
 
-	return tx.Commit()
+		defer func() {
+			_ = tx.Rollback()
+		}()
+
+		for _, metric := range metrics {
+			switch metric.MType {
+			case models.Gauge:
+				if metric.Value == nil {
+					return fmt.Errorf("invalid gauge metric")
+				}
+				if _, err := tx.ExecContext(ctx, `
+					INSERT INTO metrics (name, kind, value_double)
+					VALUES ($1, $2, $3)
+					ON CONFLICT (name, kind)
+					DO UPDATE SET value_double = EXCLUDED.value_double
+				`, metric.ID, models.Gauge, *metric.Value); err != nil {
+					return err
+				}
+			case models.Counter:
+				if metric.Delta == nil {
+					return fmt.Errorf("invalid counter metric")
+				}
+				if _, err := tx.ExecContext(ctx, `
+					INSERT INTO metrics (name, kind, value_bigint)
+					VALUES ($1, $2, $3)
+					ON CONFLICT (name, kind)
+					DO UPDATE SET value_bigint = metrics.value_bigint + EXCLUDED.value_bigint
+				`, metric.ID, models.Counter, *metric.Delta); err != nil {
+					return err
+				}
+			default:
+				return fmt.Errorf("unsupported metric type")
+			}
+		}
+
+		return tx.Commit()
+	})
 }
 
 func (p *PGStorage) Dump(ctx context.Context, path string) error {
@@ -273,4 +297,36 @@ func (p *PGStorage) Dump(ctx context.Context, path string) error {
 
 func (p *PGStorage) Restore(ctx context.Context, path string) error {
 	return nil
+}
+
+func withPGRetry(ctx context.Context, fn func(context.Context) error) error {
+	err := fn(ctx)
+	if err == nil {
+		return nil
+	}
+
+	for attempt, delay := range pgRetryDelays {
+		if !isPostgresRetriableError(err) {
+			return err
+		}
+
+		logger.Sugar.Infof("postgres retry attempt=%d in %s: %v", attempt+1, delay, err)
+		time.Sleep(delay)
+
+		err = fn(ctx)
+		if err == nil {
+			return nil
+		}
+	}
+
+	return err
+}
+
+func isPostgresRetriableError(err error) bool {
+	var pgErr *pgconn.PgError
+	if !stderrs.As(err, &pgErr) {
+		return false
+	}
+
+	return pgerrcode.IsConnectionException(pgErr.Code)
 }
