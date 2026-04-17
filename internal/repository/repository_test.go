@@ -29,7 +29,6 @@ func TestSetGauge(t *testing.T) {
 
 func TestSetGaugeWrong(t *testing.T) {
 	ms := NewMemStorage()
-	// Reading a key that was never set must return an error.
 	_, err := ms.GetValue(context.Background(), "nonexistent_gauge", models.Gauge)
 	if err == nil {
 		t.Error("expected error for nonexistent key, got nil")
@@ -51,7 +50,6 @@ func TestAddNewCounter(t *testing.T) {
 
 func TestAddNewCounterWrong(t *testing.T) {
 	ms := NewMemStorage()
-	// Reading a counter that was never set must return an error.
 	_, err := ms.GetValue(context.Background(), "nonexistent_counter", models.Counter)
 	if err == nil {
 		t.Error("expected error for nonexistent counter key, got nil")
@@ -74,8 +72,6 @@ func TestAddExistingCounter(t *testing.T) {
 
 func TestAddExistingCounterWrong(t *testing.T) {
 	ms := NewMemStorage()
-	// Gauge and counter use separate maps, so setting a gauge under "mixed"
-	// and then adding a counter under the same key stores 5 in the counter map.
 	_ = ms.SetGauge(context.Background(), "mixed", 99.9)
 	_ = ms.AddCounter(context.Background(), "mixed", 5)
 

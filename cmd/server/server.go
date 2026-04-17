@@ -53,7 +53,7 @@ func newServer(cfg *config.ServerConfig) *http.Server {
 		}()
 	}
 
-	router := newRouter(h)
+	router := newRouter(h, cfg.Key)
 
 	logger.Sugar.Infof("starting server on %s", cfg.Address)
 	return &http.Server{

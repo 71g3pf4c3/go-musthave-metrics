@@ -31,8 +31,6 @@ func New(repo repository.Repository) *MetricsService {
 	return &MetricsService{repo: repo}
 }
 
-// --- business logic ---
-
 func (s *MetricsService) Dump(ctx context.Context, path string) error {
 	return s.repo.Dump(ctx, path)
 }

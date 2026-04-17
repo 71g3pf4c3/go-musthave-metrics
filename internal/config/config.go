@@ -13,6 +13,7 @@ type AgentConfig struct {
 	Address        string `env:"ADDRESS"`
 	PollInterval   int    `env:"POLL_INTERVAL"`
 	ReportInterval int    `env:"REPORT_INTERVAL"`
+	Key            string `env:"KEY"`
 }
 
 type ServerConfig struct {
@@ -22,18 +23,21 @@ type ServerConfig struct {
 	FileStoragePath string `env:"FILE_STORAGE_PATH"`
 	RestoreFlag     bool   `env:"RESTORE"`
 	DatabaseDSN     string `env:"DATABASE_DSN"`
+	Key             string `env:"KEY"`
 }
 
 func NewAgentConfig() *AgentConfig {
 	addressFlag := flag.String("a", "localhost:8080", "server endpoint address")
 	pollInterval := flag.Int("p", 2, "poll interval in seconds")
 	reportInterval := flag.Int("r", 10, "report interval in seconds")
+	keyFlag := flag.String("k", "", "hash key")
 	flag.Parse()
 
 	cfg := AgentConfig{
 		Address:        *addressFlag,
 		PollInterval:   *pollInterval,
 		ReportInterval: *reportInterval,
+		Key:            *keyFlag,
 	}
 
 	var envCfg AgentConfig
@@ -48,6 +52,9 @@ func NewAgentConfig() *AgentConfig {
 	}
 	if envCfg.ReportInterval != 0 {
 		cfg.ReportInterval = envCfg.ReportInterval
+	}
+	if envCfg.Key != "" {
+		cfg.Key = envCfg.Key
 	}
 
 	if !strings.HasPrefix(cfg.Address, "http://") && !strings.HasPrefix(cfg.Address, "https://") {
@@ -64,6 +71,7 @@ func NewServerConfig() *ServerConfig {
 	fileStoragePath := flag.String("f", "", "file storage path")
 	restoreFlag := flag.Bool("r", true, "restore data from file on startup")
 	databaseDSN := flag.String("d", "", "database dsn")
+	keyFlag := flag.String("k", "", "hash key")
 	flag.Parse()
 
 	cfg := ServerConfig{
@@ -73,6 +81,7 @@ func NewServerConfig() *ServerConfig {
 		FileStoragePath: *fileStoragePath,
 		RestoreFlag:     *restoreFlag,
 		DatabaseDSN:     *databaseDSN,
+		Key:             *keyFlag,
 	}
 
 	var envCfg ServerConfig
@@ -91,10 +100,12 @@ func NewServerConfig() *ServerConfig {
 	if envCfg.DatabaseDSN != "" {
 		cfg.DatabaseDSN = envCfg.DatabaseDSN
 	}
+	if envCfg.Key != "" {
+		cfg.Key = envCfg.Key
+	}
 	if envCfg.FileStoragePath != "" {
 		cfg.FileStoragePath = envCfg.FileStoragePath
 	}
-	// For boolean env variable, we need to check if it was explicitly set
 	if os.Getenv("RESTORE") != "" {
 		cfg.RestoreFlag = envCfg.RestoreFlag
 	}

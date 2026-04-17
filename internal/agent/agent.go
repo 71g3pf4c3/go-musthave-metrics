@@ -15,6 +15,7 @@ import (
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/config"
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/logger"
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/models"
+	"github.com/71g3pf4c3/go-musthave-metrics/internal/sign"
 	"resty.dev/v3"
 )
 
@@ -25,6 +26,7 @@ type Agent struct {
 	pollCount      int64
 	pollInterval   int
 	reportInterval int
+	key            string
 	m              sync.Mutex
 }
 
@@ -39,6 +41,7 @@ func New(config config.AgentConfig) *Agent {
 		gauges:         make(map[string]float64),
 		pollInterval:   config.PollInterval,
 		reportInterval: config.ReportInterval,
+		key:            config.Key,
 	}
 }
 
@@ -139,12 +142,16 @@ func (a *Agent) sendBatch(metrics []models.Metrics) error {
 	}
 
 	for attempt := 0; ; attempt++ {
-		resp, err := a.client.R().
+		req := a.client.R().
 			SetHeader("Content-Type", "application/json").
 			SetHeader("Content-Encoding", "gzip").
 			SetHeader("Accept-Encoding", "gzip").
-			SetBody(buf.Bytes()).
-			Post(fmt.Sprintf("%s/updates", a.serverAddr))
+			SetBody(buf.Bytes())
+		if a.key != "" {
+			req.SetHeader(sign.HeaderHashSHA256, sign.ComputeHMAC(data, a.key))
+		}
+
+		resp, err := req.Post(fmt.Sprintf("%s/updates", a.serverAddr))
 		if err == nil {
 			if resp.StatusCode() >= http.StatusBadRequest {
 				return fmt.Errorf("batch request failed with status %d", resp.StatusCode())
@@ -179,12 +186,16 @@ func (a *Agent) sendMetric(metric models.Metrics) error {
 	}
 
 	for attempt := 0; ; attempt++ {
-		resp, err := a.client.R().
+		req := a.client.R().
 			SetHeader("Content-Type", "application/json").
 			SetHeader("Content-Encoding", "gzip").
 			SetHeader("Accept-Encoding", "gzip").
-			SetBody(buf.Bytes()).
-			Post(fmt.Sprintf("%s/update", a.serverAddr))
+			SetBody(buf.Bytes())
+		if a.key != "" {
+			req.SetHeader(sign.HeaderHashSHA256, sign.ComputeHMAC(data, a.key))
+		}
+
+		resp, err := req.Post(fmt.Sprintf("%s/update", a.serverAddr))
 		if err == nil {
 			if resp.StatusCode() >= http.StatusBadRequest {
 				return fmt.Errorf("single metric request failed with status %d", resp.StatusCode())

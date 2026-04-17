@@ -7,11 +7,12 @@ import (
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/compress"
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/handlers"
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/logger"
+	"github.com/71g3pf4c3/go-musthave-metrics/internal/sign"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
 
-func newRouter(h *handlers.MetricsHandler) http.Handler {
+func newRouter(h *handlers.MetricsHandler, key string) http.Handler {
 	r := chi.NewRouter()
 
 	r.Use(logger.RequestLogger)
@@ -19,6 +20,7 @@ func newRouter(h *handlers.MetricsHandler) http.Handler {
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
 	r.Use(compress.CompressMiddleware)
+	r.Use(sign.Middleware(key))
 	r.Use(middleware.Timeout(60 * time.Second))
 	r.Use(middleware.StripSlashes)
 

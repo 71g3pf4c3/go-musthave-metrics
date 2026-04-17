@@ -12,6 +12,7 @@ import (
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/compress"
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/config"
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/models"
+	"github.com/71g3pf4c3/go-musthave-metrics/internal/sign"
 )
 
 func TestCollectAndReport_BatchSentToUpdates(t *testing.T) {
@@ -140,5 +141,28 @@ func TestReport_GzipEncodingHeader(t *testing.T) {
 	defer mu.Unlock()
 	if !allGzip {
 		t.Error("expected all requests to have Content-Encoding: gzip")
+	}
+}
+
+func TestReport_SetsHashHeaderWhenKeyProvided(t *testing.T) {
+	gotHash := ""
+
+	srv := httptest.NewServer(compress.CompressMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/updates" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+
+		gotHash = r.Header.Get(sign.HeaderHashSHA256)
+		w.WriteHeader(http.StatusOK)
+	})))
+	defer srv.Close()
+
+	a := agent.New(config.AgentConfig{Address: srv.URL, PollInterval: 2, ReportInterval: 10, Key: "test-key"})
+	a.Collect()
+	a.Report()
+
+	if gotHash == "" {
+		t.Fatal("expected HashSHA256 header to be set")
 	}
 }

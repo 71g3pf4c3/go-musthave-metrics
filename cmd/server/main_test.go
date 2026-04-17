@@ -8,8 +8,6 @@ import (
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/config"
 )
 
-// newTestServer builds the real server (chi router + middleware + routes)
-// and returns its Handler for use with httptest.
 func newTestServer() http.Handler {
 	cfg := &config.ServerConfig{Address: "localhost:0"}
 	return newServer(cfg).Handler
@@ -42,10 +40,8 @@ func TestAddCounterMetric(t *testing.T) {
 }
 
 func TestEmptyString(t *testing.T) {
-	// Content-Type is not required; a valid update without it must return 200.
 	h := newTestServer()
 	r := httptest.NewRequest(http.MethodPost, "/update/gauge/cpu/42.5", nil)
-	// Deliberately do NOT set Content-Type.
 	w := httptest.NewRecorder()
 
 	h.ServeHTTP(w, r)
@@ -56,7 +52,6 @@ func TestEmptyString(t *testing.T) {
 }
 
 func TestWrongTypeMetric(t *testing.T) {
-	// A metric type that is neither "gauge" nor "counter" must be rejected.
 	h := newTestServer()
 	r := httptest.NewRequest(http.MethodPost, "/update/histogram/latency/0.5", nil)
 	r.Header.Set("Content-Type", "text/plain")
@@ -70,7 +65,6 @@ func TestWrongTypeMetric(t *testing.T) {
 }
 
 func TestWrongValueMetric(t *testing.T) {
-	// A non-numeric value for a counter must be rejected.
 	h := newTestServer()
 	r := httptest.NewRequest(http.MethodPost, "/update/counter/hits/notanumber", nil)
 	r.Header.Set("Content-Type", "text/plain")
@@ -84,8 +78,6 @@ func TestWrongValueMetric(t *testing.T) {
 }
 
 func TestShortPath(t *testing.T) {
-	// A path that is missing the value segment does not match the pattern and
-	// must return 404 (no route matched).
 	h := newTestServer()
 	r := httptest.NewRequest(http.MethodPost, "/update/gauge/cpu", nil)
 	r.Header.Set("Content-Type", "text/plain")
