@@ -82,6 +82,20 @@ func TestMiddleware_SignsResponse(t *testing.T) {
 	}
 }
 
+func TestMiddleware_MissingHeaderSkipsVerify(t *testing.T) {
+	h := Middleware("test-key")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	r := httptest.NewRequest(http.MethodPost, "/update", strings.NewReader("body"))
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 when HashSHA256 header absent, got %d", w.Code)
+	}
+}
+
 func TestMiddleware_NoKeySkipsAll(t *testing.T) {
 	called := false
 	h := Middleware("")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

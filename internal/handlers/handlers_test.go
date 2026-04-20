@@ -339,7 +339,6 @@ func TestJsonUpdateHandlerGauge(t *testing.T) {
 		t.Errorf("expected 200, got %d", w.Code)
 	}
 
-	// Verify value was stored by reading it back.
 	rw := httptest.NewRecorder()
 	s.GetHandler(rw, makeGetRequest("gauge", "cpu"))
 	if rw.Body.String() != "42.5" {
@@ -359,7 +358,6 @@ func TestJsonUpdateHandlerCounter(t *testing.T) {
 		t.Errorf("expected 200, got %d", w.Code)
 	}
 
-	// Verify value was stored.
 	rw := httptest.NewRecorder()
 	s.GetHandler(rw, makeGetRequest("counter", "hits"))
 	if rw.Body.String() != "10" {

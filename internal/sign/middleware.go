@@ -48,7 +48,7 @@ func verifyRequest(w http.ResponseWriter, r *http.Request, key string) error {
 		return err
 	}
 
-	if !EqualHMAC(r.Header.Get(HeaderHashSHA256), body, key) {
+	if h := r.Header.Get(HeaderHashSHA256); h != "" && !EqualHMAC(h, body, key) {
 		w.WriteHeader(http.StatusBadRequest)
 		return bytes.ErrTooLarge
 	}
