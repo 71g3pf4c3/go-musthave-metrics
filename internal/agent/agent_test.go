@@ -15,6 +15,19 @@ import (
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/sign"
 )
 
+func newAgent(srv *httptest.Server, extra ...func(*config.AgentConfig)) *agent.Agent {
+	cfg := config.AgentConfig{
+		Address:        srv.URL,
+		PollInterval:   1,
+		ReportInterval: 1,
+		RateLimit:      1,
+	}
+	for _, fn := range extra {
+		fn(&cfg)
+	}
+	return agent.New(cfg)
+}
+
 func TestCollectAndReport_BatchSentToUpdates(t *testing.T) {
 	var mu sync.Mutex
 	calledUpdates := false
@@ -25,34 +38,37 @@ func TestCollectAndReport_BatchSentToUpdates(t *testing.T) {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
-
 		var batch []models.Metrics
 		if err := json.NewDecoder(r.Body).Decode(&batch); err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-
 		mu.Lock()
 		calledUpdates = true
 		receivedCount = len(batch)
 		mu.Unlock()
-
 		w.WriteHeader(http.StatusOK)
 	})))
 	defer srv.Close()
 
-	a := agent.New(config.AgentConfig{Address: srv.URL, PollInterval: 2, ReportInterval: 10})
+	a := newAgent(srv)
 	a.Collect()
-	a.Report()
+	a.CollectExtra()
+
+	batch := a.BuildBatch()
+	if len(batch) == 0 {
+		t.Fatal("expected non-empty batch")
+	}
+
+	a.SendBatch(batch)
 
 	mu.Lock()
 	defer mu.Unlock()
-
 	if !calledUpdates {
 		t.Fatal("expected /updates to be called")
 	}
 	if receivedCount == 0 {
-		t.Fatal("expected non-empty batch")
+		t.Fatal("expected non-empty batch on server")
 	}
 }
 
@@ -64,7 +80,6 @@ func TestReport_FallbackToSingleMetricAPI(t *testing.T) {
 		switch r.URL.Path {
 		case "/updates":
 			w.WriteHeader(http.StatusInternalServerError)
-			return
 		case "/update":
 			var m models.Metrics
 			if err := json.NewDecoder(r.Body).Decode(&m); err != nil {
@@ -75,17 +90,16 @@ func TestReport_FallbackToSingleMetricAPI(t *testing.T) {
 			fallbackCalls++
 			mu.Unlock()
 			w.WriteHeader(http.StatusOK)
-			return
 		default:
 			w.WriteHeader(http.StatusNotFound)
-			return
 		}
 	})))
 	defer srv.Close()
 
-	a := agent.New(config.AgentConfig{Address: srv.URL, PollInterval: 2, ReportInterval: 10})
+	a := newAgent(srv)
 	a.Collect()
-	a.Report()
+	batch := a.BuildBatch()
+	a.SendBatch(batch)
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -128,14 +142,13 @@ func TestReport_GzipEncodingHeader(t *testing.T) {
 				return
 			}
 		}
-
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
 
-	a := agent.New(config.AgentConfig{Address: srv.URL, PollInterval: 2, ReportInterval: 10})
+	a := newAgent(srv)
 	a.Collect()
-	a.Report()
+	a.SendBatch(a.BuildBatch())
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -152,17 +165,50 @@ func TestReport_SetsHashHeaderWhenKeyProvided(t *testing.T) {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
-
 		gotHash = r.Header.Get(sign.HeaderHashSHA256)
 		w.WriteHeader(http.StatusOK)
 	})))
 	defer srv.Close()
 
-	a := agent.New(config.AgentConfig{Address: srv.URL, PollInterval: 2, ReportInterval: 10, Key: "test-key"})
+	a := newAgent(srv, func(cfg *config.AgentConfig) { cfg.Key = "test-key" })
 	a.Collect()
-	a.Report()
+	a.SendBatch(a.BuildBatch())
 
 	if gotHash == "" {
 		t.Fatal("expected HashSHA256 header to be set")
+	}
+}
+
+func TestCollectExtra_SetsMemAndCPU(t *testing.T) {
+	a := newAgent(httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})))
+
+	a.CollectExtra()
+	batch := a.BuildBatch()
+
+	gauges := map[string]bool{}
+	for _, m := range batch {
+		if m.MType == models.Gauge {
+			gauges[m.ID] = true
+		}
+	}
+
+	if !gauges["TotalMemory"] {
+		t.Error("expected TotalMemory gauge")
+	}
+	if !gauges["FreeMemory"] {
+		t.Error("expected FreeMemory gauge")
+	}
+
+	found := false
+	for k := range gauges {
+		if len(k) > 14 && k[:14] == "CPUutilization" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected at least one CPUutilizationN gauge")
 	}
 }

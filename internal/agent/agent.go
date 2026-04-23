@@ -17,6 +17,8 @@ import (
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/logger"
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/models"
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/sign"
+	"github.com/shirou/gopsutil/v4/cpu"
+	"github.com/shirou/gopsutil/v4/mem"
 	"resty.dev/v3"
 )
 
@@ -27,27 +29,35 @@ type Agent struct {
 	pollCount      int64
 	pollInterval   int
 	reportInterval int
+	rateLimit      int
 	key            string
 	m              sync.Mutex
 }
 
 var agentRetryDelays = []time.Duration{time.Second, 3 * time.Second, 5 * time.Second}
 
-func New(config config.AgentConfig) *Agent {
+func New(cfg config.AgentConfig) *Agent {
+	rl := cfg.RateLimit
+	if rl <= 0 {
+		rl = 1
+	}
 	logger.Sugar.Infof("initializing agent, server=%s, poll=%ds, report=%ds",
-		config.Address, config.PollInterval, config.ReportInterval)
+		cfg.Address, cfg.PollInterval, cfg.ReportInterval)
 	return &Agent{
 		client:         resty.New(),
-		serverAddr:     config.Address,
+		serverAddr:     cfg.Address,
 		gauges:         make(map[string]float64),
-		pollInterval:   config.PollInterval,
-		reportInterval: config.ReportInterval,
-		key:            config.Key,
+		pollInterval:   cfg.PollInterval,
+		reportInterval: cfg.ReportInterval,
+		rateLimit:      rl,
+		key:            cfg.Key,
 	}
 }
 
 func (a *Agent) Collect() {
 	a.m.Lock()
+	defer a.m.Unlock()
+
 	var ms runtime.MemStats
 	runtime.ReadMemStats(&ms)
 	logger.Sugar.Debug("collecting runtime metrics")
@@ -83,52 +93,103 @@ func (a *Agent) Collect() {
 
 	a.pollCount++
 	logger.Sugar.Debugf("metrics collected, pollCount=%d", a.pollCount)
-	a.m.Unlock()
 }
 
-func (a *Agent) Report() {
-	a.report(context.Background())
-}
-
-func (a *Agent) report(ctx context.Context) {
+func (a *Agent) CollectExtra() {
 	a.m.Lock()
-	gauges := make(map[string]float64, len(a.gauges))
-	maps.Copy(gauges, a.gauges)
+	defer a.m.Unlock()
+
+	if vm, err := mem.VirtualMemory(); err == nil {
+		a.gauges["TotalMemory"] = float64(vm.Total)
+		a.gauges["FreeMemory"] = float64(vm.Free)
+	}
+
+	if cpus, err := cpu.Percent(0, true); err == nil {
+		for i, c := range cpus {
+			a.gauges[fmt.Sprintf("CPUutilization%d", i+1)] = c
+		}
+	}
+
+	logger.Sugar.Debug("extra metrics collected")
+}
+
+func (a *Agent) BuildBatch() []models.Metrics {
+	a.m.Lock()
+	gauges := maps.Clone(a.gauges)
 	pollCount := a.pollCount
 	a.m.Unlock()
 
 	batch := make([]models.Metrics, 0, len(gauges)+1)
 	for name, value := range gauges {
 		v := value
-		batch = append(batch, models.Metrics{
-			ID:    name,
-			MType: models.Gauge,
-			Value: &v,
-		})
+		batch = append(batch, models.Metrics{ID: name, MType: models.Gauge, Value: &v})
 	}
+	batch = append(batch, models.Metrics{ID: "PollCount", MType: models.Counter, Delta: &pollCount})
+	return batch
+}
 
-	batch = append(batch, models.Metrics{
-		ID:    "PollCount",
-		MType: models.Counter,
-		Delta: &pollCount,
-	})
-
-	if len(batch) == 0 {
-		logger.Sugar.Debug("skip empty batch")
-		return
-	}
-
-	logger.Sugar.Infof("reporting %d metrics in batch", len(batch))
+func (a *Agent) SendBatch(batch []models.Metrics) {
+	ctx := context.Background()
 	if err := a.sendBatch(ctx, batch); err != nil {
-		logger.Sugar.Errorf("send batch failed, fallback to single metrics: %v", err)
-		for _, metric := range batch {
-			if err := a.sendMetric(ctx, metric); err != nil {
-				logger.Sugar.Errorf("fallback send %s/%s: %v", metric.MType, metric.ID, err)
+		logger.Sugar.Errorf("send batch failed, fallback to single: %v", err)
+		for _, m := range batch {
+			if err := a.sendMetric(ctx, m); err != nil {
+				logger.Sugar.Errorf("fallback send %s/%s: %v", m.MType, m.ID, err)
 			}
 		}
 	}
+}
 
-	logger.Sugar.Debug("report complete")
+func (a *Agent) worker(jobs <-chan []models.Metrics) {
+	for batch := range jobs {
+		a.SendBatch(batch)
+	}
+}
+
+func (a *Agent) Run() {
+	logger.Sugar.Infof("agent started, workers=%d", a.rateLimit)
+
+	jobs := make(chan []models.Metrics, a.rateLimit)
+	for i := 0; i < a.rateLimit; i++ {
+		go a.worker(jobs)
+	}
+
+	pollTicker := time.NewTicker(time.Duration(a.pollInterval) * time.Second)
+	reportTicker := time.NewTicker(time.Duration(a.reportInterval) * time.Second)
+	defer pollTicker.Stop()
+	defer reportTicker.Stop()
+
+	for {
+		select {
+		case <-pollTicker.C:
+			go a.Collect()
+			go a.CollectExtra()
+		case <-reportTicker.C:
+			batch := a.BuildBatch()
+			if len(batch) > 0 {
+				jobs <- batch
+			}
+		}
+	}
+}
+
+func sleepCtx(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer func() {
+		if !timer.Stop() {
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
+	}()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 func (a *Agent) sendBatch(ctx context.Context, metrics []models.Metrics) error {
@@ -228,44 +289,6 @@ func (a *Agent) sendMetric(ctx context.Context, metric models.Metrics) error {
 		logger.Sugar.Infof("single metric retry attempt=%d in %s: %v", attempt+1, delay, err)
 		if err := sleepCtx(ctx, delay); err != nil {
 			return err
-		}
-	}
-}
-
-func sleepCtx(ctx context.Context, delay time.Duration) error {
-	timer := time.NewTimer(delay)
-	defer func() {
-		if !timer.Stop() {
-			select {
-			case <-timer.C:
-			default:
-			}
-		}
-	}()
-
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-timer.C:
-		return nil
-	}
-}
-
-func (a *Agent) Run(ctx context.Context) {
-	logger.Sugar.Info("agent started")
-	pollTicker := time.NewTicker(time.Duration(a.pollInterval) * time.Second)
-	reportTicker := time.NewTicker(time.Duration(a.reportInterval) * time.Second)
-	defer pollTicker.Stop()
-	defer reportTicker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			logger.Sugar.Infof("agent stopped: %v", ctx.Err())
-			return
-		case <-pollTicker.C:
-			a.Collect()
-		case <-reportTicker.C:
-			a.report(ctx)
 		}
 	}
 }

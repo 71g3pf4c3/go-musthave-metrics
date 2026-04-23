@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"log"
 
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/agent"
@@ -15,5 +14,5 @@ func main() {
 		log.Fatalf("failed to initialize logger: %v", err)
 	}
 	a := agent.New(*cfg)
-	a.Run(context.Background())
+	a.Run()
 }
