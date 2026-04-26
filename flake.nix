@@ -17,7 +17,6 @@
             delve
             gotools
             golangci-lint
-            gomock
             gnumake
             git
             jq
