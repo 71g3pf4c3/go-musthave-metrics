@@ -20,7 +20,9 @@ func newRouter(h *handlers.MetricsHandler, key string) http.Handler {
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
 	r.Use(compress.CompressMiddleware)
-	r.Use(sign.Middleware(key))
+	if key != "" {
+		r.Use(sign.Middleware(key))
+	}
 	r.Use(middleware.Timeout(60 * time.Second))
 	r.Use(middleware.StripSlashes)
 
