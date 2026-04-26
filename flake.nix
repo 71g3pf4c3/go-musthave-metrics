@@ -23,11 +23,13 @@
           ];
 
           shellHook = ''
-            export GOPATH="${toString ./.}/.gopath"
+            export GOPATH="$PWD/.gopath"
             export GOBIN="$GOPATH/bin"
+            export GOMODCACHE="$GOPATH/pkg/mod"
+            export GOCACHE="$PWD/.gocache"
             export PATH="$GOBIN:$PATH"
 
-            mkdir -p "$GOBIN"
+            mkdir -p "$GOBIN" "$GOMODCACHE" "$GOCACHE"
 
             if ! command -v mockgen >/dev/null 2>&1; then
               go install github.com/golang/mock/mockgen@v1.6.0

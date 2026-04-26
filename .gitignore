@@ -26,3 +26,5 @@ vendor/
 
 # Direnv
 .direnv
+.gopath
+.gocache
