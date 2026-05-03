@@ -3,6 +3,7 @@ package agent
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"encoding/json"
 	"fmt"
 	"maps"
@@ -86,6 +87,10 @@ func (a *Agent) Collect() {
 }
 
 func (a *Agent) Report() {
+	a.report(context.Background())
+}
+
+func (a *Agent) report(ctx context.Context) {
 	a.m.Lock()
 	gauges := make(map[string]float64, len(a.gauges))
 	maps.Copy(gauges, a.gauges)
@@ -114,10 +119,10 @@ func (a *Agent) Report() {
 	}
 
 	logger.Sugar.Infof("reporting %d metrics in batch", len(batch))
-	if err := a.sendBatch(batch); err != nil {
+	if err := a.sendBatch(ctx, batch); err != nil {
 		logger.Sugar.Errorf("send batch failed, fallback to single metrics: %v", err)
 		for _, metric := range batch {
-			if err := a.sendMetric(metric); err != nil {
+			if err := a.sendMetric(ctx, metric); err != nil {
 				logger.Sugar.Errorf("fallback send %s/%s: %v", metric.MType, metric.ID, err)
 			}
 		}
@@ -126,7 +131,7 @@ func (a *Agent) Report() {
 	logger.Sugar.Debug("report complete")
 }
 
-func (a *Agent) sendBatch(metrics []models.Metrics) error {
+func (a *Agent) sendBatch(ctx context.Context, metrics []models.Metrics) error {
 	data, err := json.Marshal(metrics)
 	if err != nil {
 		return fmt.Errorf("marshal batch: %w", err)
@@ -142,7 +147,12 @@ func (a *Agent) sendBatch(metrics []models.Metrics) error {
 	}
 
 	for attempt := 0; ; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
 		req := a.client.R().
+			SetContext(ctx).
 			SetHeader("Content-Type", "application/json").
 			SetHeader("Content-Encoding", "gzip").
 			SetHeader("Accept-Encoding", "gzip").
@@ -165,11 +175,13 @@ func (a *Agent) sendBatch(metrics []models.Metrics) error {
 
 		delay := agentRetryDelays[attempt]
 		logger.Sugar.Infof("batch send retry attempt=%d in %s: %v", attempt+1, delay, err)
-		time.Sleep(delay)
+		if err := sleepCtx(ctx, delay); err != nil {
+			return err
+		}
 	}
 }
 
-func (a *Agent) sendMetric(metric models.Metrics) error {
+func (a *Agent) sendMetric(ctx context.Context, metric models.Metrics) error {
 	logger.Sugar.Debugf("sending metric %s/%s", metric.MType, metric.ID)
 	data, err := json.Marshal(metric)
 	if err != nil {
@@ -186,7 +198,12 @@ func (a *Agent) sendMetric(metric models.Metrics) error {
 	}
 
 	for attempt := 0; ; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
 		req := a.client.R().
+			SetContext(ctx).
 			SetHeader("Content-Type", "application/json").
 			SetHeader("Content-Encoding", "gzip").
 			SetHeader("Accept-Encoding", "gzip").
@@ -209,11 +226,32 @@ func (a *Agent) sendMetric(metric models.Metrics) error {
 
 		delay := agentRetryDelays[attempt]
 		logger.Sugar.Infof("single metric retry attempt=%d in %s: %v", attempt+1, delay, err)
-		time.Sleep(delay)
+		if err := sleepCtx(ctx, delay); err != nil {
+			return err
+		}
 	}
 }
 
-func (a *Agent) Run() {
+func sleepCtx(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer func() {
+		if !timer.Stop() {
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
+	}()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
+func (a *Agent) Run(ctx context.Context) {
 	logger.Sugar.Info("agent started")
 	pollTicker := time.NewTicker(time.Duration(a.pollInterval) * time.Second)
 	reportTicker := time.NewTicker(time.Duration(a.reportInterval) * time.Second)
@@ -221,10 +259,13 @@ func (a *Agent) Run() {
 	defer reportTicker.Stop()
 	for {
 		select {
+		case <-ctx.Done():
+			logger.Sugar.Infof("agent stopped: %v", ctx.Err())
+			return
 		case <-pollTicker.C:
 			a.Collect()
 		case <-reportTicker.C:
-			a.Report()
+			a.report(ctx)
 		}
 	}
 }

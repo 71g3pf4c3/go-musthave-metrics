@@ -8,13 +8,15 @@ import (
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/config"
 )
 
-func newTestServer() http.Handler {
+func newTestServer(t *testing.T) http.Handler {
+	t.Helper()
+
 	cfg := &config.ServerConfig{Address: "localhost:0"}
 	return newServer(cfg).Handler
 }
 
 func TestAddGaugeMetric(t *testing.T) {
-	h := newTestServer()
+	h := newTestServer(t)
 	r := httptest.NewRequest(http.MethodPost, "/update/gauge/cpu/42.5", nil)
 	r.Header.Set("Content-Type", "text/plain")
 	w := httptest.NewRecorder()
@@ -27,7 +29,7 @@ func TestAddGaugeMetric(t *testing.T) {
 }
 
 func TestAddCounterMetric(t *testing.T) {
-	h := newTestServer()
+	h := newTestServer(t)
 	r := httptest.NewRequest(http.MethodPost, "/update/counter/hits/10", nil)
 	r.Header.Set("Content-Type", "text/plain")
 	w := httptest.NewRecorder()
@@ -40,7 +42,7 @@ func TestAddCounterMetric(t *testing.T) {
 }
 
 func TestEmptyString(t *testing.T) {
-	h := newTestServer()
+	h := newTestServer(t)
 	r := httptest.NewRequest(http.MethodPost, "/update/gauge/cpu/42.5", nil)
 	w := httptest.NewRecorder()
 
@@ -52,7 +54,7 @@ func TestEmptyString(t *testing.T) {
 }
 
 func TestWrongTypeMetric(t *testing.T) {
-	h := newTestServer()
+	h := newTestServer(t)
 	r := httptest.NewRequest(http.MethodPost, "/update/histogram/latency/0.5", nil)
 	r.Header.Set("Content-Type", "text/plain")
 	w := httptest.NewRecorder()
@@ -65,7 +67,7 @@ func TestWrongTypeMetric(t *testing.T) {
 }
 
 func TestWrongValueMetric(t *testing.T) {
-	h := newTestServer()
+	h := newTestServer(t)
 	r := httptest.NewRequest(http.MethodPost, "/update/counter/hits/notanumber", nil)
 	r.Header.Set("Content-Type", "text/plain")
 	w := httptest.NewRecorder()
@@ -78,7 +80,7 @@ func TestWrongValueMetric(t *testing.T) {
 }
 
 func TestShortPath(t *testing.T) {
-	h := newTestServer()
+	h := newTestServer(t)
 	r := httptest.NewRequest(http.MethodPost, "/update/gauge/cpu", nil)
 	r.Header.Set("Content-Type", "text/plain")
 	w := httptest.NewRecorder()
