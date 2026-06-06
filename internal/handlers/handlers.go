@@ -1,3 +1,4 @@
+// Package handlers contains HTTP handlers for the metrics server.
 package handlers
 
 import (
@@ -17,11 +18,13 @@ import (
 	"go.uber.org/zap"
 )
 
+// MetricsHandler holds all HTTP handlers for the metrics API.
 type MetricsHandler struct {
 	service  service.Service
 	notifier *audit.Notifier
 }
 
+// NewMetricsHandler creates a handler. notifier may be nil — audit is skipped.
 func NewMetricsHandler(metricService service.Service, notifier *audit.Notifier) *MetricsHandler {
 	return &MetricsHandler{service: metricService, notifier: notifier}
 }
@@ -37,10 +40,12 @@ func (h *MetricsHandler) emitAudit(r *http.Request, names []string) {
 	})
 }
 
+// MainPageHandler returns a static welcome message.
 func MainPageHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("Welcome to go-musthave-metrics!"))
 }
 
+// ReadyzHandler responds 200 OK — server is ready.
 func (h *MetricsHandler) ReadyzHandler(w http.ResponseWriter, r *http.Request) {
 	logger.Sugar.Debug("Updating readiness probe")
 	w.Header().Set("Content-Type", "text/plain")
@@ -48,6 +53,7 @@ func (h *MetricsHandler) ReadyzHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("ok"))
 }
 
+// HealthzHandler responds 200 OK — process is alive.
 func (h *MetricsHandler) HealthzHandler(w http.ResponseWriter, r *http.Request) {
 	logger.Sugar.Debug("Updating healthz probe")
 	w.Header().Set("Content-Type", "text/plain")
@@ -55,6 +61,7 @@ func (h *MetricsHandler) HealthzHandler(w http.ResponseWriter, r *http.Request) 
 	w.Write([]byte("ok"))
 }
 
+// PingHandler checks the storage connection. 200 on success, 500 on error.
 func (h *MetricsHandler) PingHandler(w http.ResponseWriter, r *http.Request) {
 	logger.Sugar.Debug("ping database")
 	w.Header().Set("Content-Type", "text/plain")
@@ -66,6 +73,7 @@ func (h *MetricsHandler) PingHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// ListHandler returns an HTML page with all stored metrics.
 func (h *MetricsHandler) ListHandler(w http.ResponseWriter, r *http.Request) {
 	logger.Sugar.Debug("listing all metrics")
 	gauges, counters, err := h.service.List(r.Context())
@@ -97,6 +105,8 @@ func (h *MetricsHandler) ListHandler(w http.ResponseWriter, r *http.Request) {
 	io.WriteString(w, body.String())
 }
 
+// GetHandler returns a single metric value as plain text.
+// Route: GET /value/{kind}/{name}
 func (h *MetricsHandler) GetHandler(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	kind := r.PathValue("kind")
@@ -123,6 +133,8 @@ func (h *MetricsHandler) GetHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(v))
 }
 
+// UpdateHandler stores a metric from URL path parameters.
+// Route: POST /update/{kind}/{name}/{value}
 func (h *MetricsHandler) UpdateHandler(w http.ResponseWriter, r *http.Request) {
 	kind := r.PathValue("kind")
 	name := r.PathValue("name")
@@ -155,6 +167,8 @@ func (h *MetricsHandler) UpdateHandler(w http.ResponseWriter, r *http.Request) {
 	h.emitAudit(r, []string{name})
 }
 
+// JSONUpdateHandler stores a single metric from a JSON request body.
+// Route: POST /update
 func (h *MetricsHandler) JSONUpdateHandler(w http.ResponseWriter, r *http.Request) {
 	logger.Sugar.Debug("decoding request")
 	var metric models.Metrics
@@ -180,6 +194,8 @@ func (h *MetricsHandler) JSONUpdateHandler(w http.ResponseWriter, r *http.Reques
 	w.WriteHeader(http.StatusOK)
 }
 
+// JSONGetHandler returns a single metric as JSON, looked up by ID and type.
+// Route: POST /value
 func (h *MetricsHandler) JSONGetHandler(w http.ResponseWriter, r *http.Request) {
 	logger.Sugar.Debug("decoding request")
 	var metric models.Metrics
@@ -216,6 +232,8 @@ func (h *MetricsHandler) JSONGetHandler(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
+// BatchUpdateHandler stores multiple metrics from a JSON request body.
+// Route: POST /updates
 func (h *MetricsHandler) BatchUpdateHandler(w http.ResponseWriter, r *http.Request) {
 	logger.Sugar.Debug("decoding batch request")
 
