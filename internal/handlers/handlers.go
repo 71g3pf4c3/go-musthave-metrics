@@ -6,7 +6,9 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/71g3pf4c3/go-musthave-metrics/internal/audit"
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/logger"
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/models"
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/repository"
@@ -15,11 +17,23 @@ import (
 )
 
 type MetricsHandler struct {
-	service service.Service
+	service  service.Service
+	notifier *audit.Notifier
 }
 
-func NewMetricsHandler(metricService service.Service) *MetricsHandler {
-	return &MetricsHandler{service: metricService}
+func NewMetricsHandler(metricService service.Service, notifier *audit.Notifier) *MetricsHandler {
+	return &MetricsHandler{service: metricService, notifier: notifier}
+}
+
+func (h *MetricsHandler) emitAudit(r *http.Request, names []string) {
+	if h.notifier == nil {
+		return
+	}
+	h.notifier.Notify(audit.Event{
+		TS:        time.Now().Unix(),
+		Metrics:   names,
+		IPAddress: r.RemoteAddr,
+	})
 }
 
 func MainPageHandler(w http.ResponseWriter, r *http.Request) {
@@ -137,6 +151,7 @@ func (h *MetricsHandler) UpdateHandler(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
+	h.emitAudit(r, []string{name})
 }
 
 func (h *MetricsHandler) JSONUpdateHandler(w http.ResponseWriter, r *http.Request) {
@@ -160,6 +175,7 @@ func (h *MetricsHandler) JSONUpdateHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	h.emitAudit(r, []string{metric.ID})
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -228,5 +244,10 @@ func (h *MetricsHandler) BatchUpdateHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	names := make([]string, 0, len(metrics))
+	for _, m := range metrics {
+		names = append(names, m.ID)
+	}
+	h.emitAudit(r, names)
 	w.WriteHeader(http.StatusOK)
 }

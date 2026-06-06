@@ -35,7 +35,7 @@ func (e *errorResponseWriter) Write([]byte) (int, error) {
 func (e *errorResponseWriter) WriteHeader(statusCode int) { e.code = statusCode }
 
 func newHandler() *handlers.MetricsHandler {
-	return handlers.NewMetricsHandler(service.New(repository.NewMemStorage()))
+	return handlers.NewMetricsHandler(service.New(repository.NewMemStorage()), nil)
 }
 
 func makeRequest(kind, name, value string) *http.Request {

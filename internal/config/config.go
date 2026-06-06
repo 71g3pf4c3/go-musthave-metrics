@@ -25,6 +25,8 @@ type ServerConfig struct {
 	RestoreFlag     bool   `env:"RESTORE"`
 	DatabaseDSN     string `env:"DATABASE_DSN"`
 	Key             string `env:"KEY"`
+	AuditFile       string `env:"AUDIT_FILE"`
+	AuditURL        string `env:"AUDIT_URL"`
 }
 
 func NewAgentConfig() *AgentConfig {
@@ -78,6 +80,8 @@ func NewServerConfig() *ServerConfig {
 	restoreFlag := flag.Bool("r", true, "restore data from file on startup")
 	databaseDSN := flag.String("d", "", "database dsn")
 	keyFlag := flag.String("k", "", "hash key")
+	auditFileFlag := flag.String("audit-file", "", "audit log file path")
+	auditURLFlag := flag.String("audit-url", "", "audit log remote URL")
 	flag.Parse()
 
 	cfg := ServerConfig{
@@ -88,6 +92,8 @@ func NewServerConfig() *ServerConfig {
 		RestoreFlag:     *restoreFlag,
 		DatabaseDSN:     *databaseDSN,
 		Key:             *keyFlag,
+		AuditFile:       *auditFileFlag,
+		AuditURL:        *auditURLFlag,
 	}
 
 	var envCfg ServerConfig
@@ -114,6 +120,12 @@ func NewServerConfig() *ServerConfig {
 	}
 	if os.Getenv("RESTORE") != "" {
 		cfg.RestoreFlag = envCfg.RestoreFlag
+	}
+	if envCfg.AuditFile != "" {
+		cfg.AuditFile = envCfg.AuditFile
+	}
+	if envCfg.AuditURL != "" {
+		cfg.AuditURL = envCfg.AuditURL
 	}
 
 	return &cfg

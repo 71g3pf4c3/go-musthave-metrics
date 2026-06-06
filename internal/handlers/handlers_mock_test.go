@@ -21,7 +21,7 @@ func TestGetHandlerNotFoundFromService(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockSvc := mocks.NewMockService(ctrl)
-	h := handlers.NewMetricsHandler(mockSvc)
+	h := handlers.NewMetricsHandler(mockSvc, nil)
 
 	r := httptest.NewRequest(http.MethodGet, "/value/gauge/cpu", nil)
 	r.SetPathValue("kind", models.Gauge)
@@ -41,7 +41,7 @@ func TestUpdateHandlerBadRequestFromService(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockSvc := mocks.NewMockService(ctrl)
-	h := handlers.NewMetricsHandler(mockSvc)
+	h := handlers.NewMetricsHandler(mockSvc, nil)
 
 	r := httptest.NewRequest(http.MethodPost, "/update/counter/hits/abc", nil)
 	r.SetPathValue("kind", models.Counter)
@@ -62,7 +62,7 @@ func TestPingHandlerErrorFromService(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockSvc := mocks.NewMockService(ctrl)
-	h := handlers.NewMetricsHandler(mockSvc)
+	h := handlers.NewMetricsHandler(mockSvc, nil)
 
 	r := httptest.NewRequest(http.MethodGet, "/ping", nil)
 	w := httptest.NewRecorder()
@@ -80,7 +80,7 @@ func TestJSONGetHandlerSuccessFromService(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockSvc := mocks.NewMockService(ctrl)
-	h := handlers.NewMetricsHandler(mockSvc)
+	h := handlers.NewMetricsHandler(mockSvc, nil)
 
 	body := `{"id":"cpu","type":"gauge"}`
 	r := httptest.NewRequest(http.MethodPost, "/value", strings.NewReader(body))
