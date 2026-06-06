@@ -34,7 +34,13 @@ func (ms *MemStorage) AddCounter(_ context.Context, key string, value int64) err
 }
 
 func (ms *MemStorage) GetAllGauge(_ context.Context) (map[string]float64, error) {
-	return ms.gauge, nil
+	ms.mu.RLock()
+	defer ms.mu.RUnlock()
+	result := make(map[string]float64, len(ms.gauge))
+	for k, v := range ms.gauge {
+		result[k] = v
+	}
+	return result, nil
 }
 
 func (ms *MemStorage) Ping(_ context.Context) error {
@@ -42,7 +48,13 @@ func (ms *MemStorage) Ping(_ context.Context) error {
 }
 
 func (ms *MemStorage) GetAllCounter(_ context.Context) (map[string]int64, error) {
-	return ms.counter, nil
+	ms.mu.RLock()
+	defer ms.mu.RUnlock()
+	result := make(map[string]int64, len(ms.counter))
+	for k, v := range ms.counter {
+		result[k] = v
+	}
+	return result, nil
 }
 
 func (ms *MemStorage) SetGauge(_ context.Context, key string, value float64) error {
@@ -53,8 +65,8 @@ func (ms *MemStorage) SetGauge(_ context.Context, key string, value float64) err
 }
 
 func (ms *MemStorage) GetValue(_ context.Context, name string, kind string) (string, error) {
-	ms.mu.Lock()
-	defer ms.mu.Unlock()
+	ms.mu.RLock()
+	defer ms.mu.RUnlock()
 	switch kind {
 	case models.Gauge:
 		if value, ok := ms.gauge[name]; ok {
@@ -71,8 +83,8 @@ func (ms *MemStorage) GetValue(_ context.Context, name string, kind string) (str
 }
 
 func (ms *MemStorage) GetGauge(_ context.Context, name string) (float64, error) {
-	ms.mu.Lock()
-	defer ms.mu.Unlock()
+	ms.mu.RLock()
+	defer ms.mu.RUnlock()
 	if value, ok := ms.gauge[name]; ok {
 		return value, nil
 	}
@@ -80,8 +92,8 @@ func (ms *MemStorage) GetGauge(_ context.Context, name string) (float64, error) 
 }
 
 func (ms *MemStorage) GetCounter(_ context.Context, name string) (int64, error) {
-	ms.mu.Lock()
-	defer ms.mu.Unlock()
+	ms.mu.RLock()
+	defer ms.mu.RUnlock()
 	if value, ok := ms.counter[name]; ok {
 		return value, nil
 	}
@@ -104,7 +116,7 @@ func (ms *MemStorage) Snapshot() []models.Metrics {
 func (ms *MemStorage) Dump(_ context.Context, path string) error {
 	snap := ms.Snapshot()
 	logger.Sugar.Infof("dumping %d metrics to %s", len(snap), path)
-	data, err := json.MarshalIndent(snap, "", "   ")
+	data, err := json.Marshal(snap)
 	if err != nil {
 		logger.Sugar.Debugf("failed to marshal metrics: %v", err)
 		return err

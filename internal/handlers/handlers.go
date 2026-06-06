@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -93,7 +94,7 @@ func (h *MetricsHandler) ListHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/html")
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(body.String()))
+	io.WriteString(w, body.String())
 }
 
 func (h *MetricsHandler) GetHandler(w http.ResponseWriter, r *http.Request) {
