@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/caarlos0/env/v6"
+	"github.com/caarlos0/env/v11"
 )
 
 type AgentConfig struct {
@@ -14,6 +14,7 @@ type AgentConfig struct {
 	PollInterval   int    `env:"POLL_INTERVAL"`
 	ReportInterval int    `env:"REPORT_INTERVAL"`
 	Key            string `env:"KEY"`
+	RateLimit      int    `env:"RATE_LIMIT"`
 }
 
 type ServerConfig struct {
@@ -31,6 +32,7 @@ func NewAgentConfig() *AgentConfig {
 	pollInterval := flag.Int("p", 2, "poll interval in seconds")
 	reportInterval := flag.Int("r", 10, "report interval in seconds")
 	keyFlag := flag.String("k", "", "hash key")
+	rateLimitFlag := flag.Int("l", 1, "rate limit for outgoing requests")
 	flag.Parse()
 
 	cfg := AgentConfig{
@@ -38,6 +40,7 @@ func NewAgentConfig() *AgentConfig {
 		PollInterval:   *pollInterval,
 		ReportInterval: *reportInterval,
 		Key:            *keyFlag,
+		RateLimit:      *rateLimitFlag,
 	}
 
 	var envCfg AgentConfig
@@ -55,6 +58,9 @@ func NewAgentConfig() *AgentConfig {
 	}
 	if envCfg.Key != "" {
 		cfg.Key = envCfg.Key
+	}
+	if envCfg.RateLimit != 0 {
+		cfg.RateLimit = envCfg.RateLimit
 	}
 
 	if !strings.HasPrefix(cfg.Address, "http://") && !strings.HasPrefix(cfg.Address, "https://") {

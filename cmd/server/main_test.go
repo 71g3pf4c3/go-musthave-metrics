@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -12,7 +13,11 @@ func newTestServer(t *testing.T) http.Handler {
 	t.Helper()
 
 	cfg := &config.ServerConfig{Address: "localhost:0"}
-	return newServer(cfg).Handler
+	srv, err := newServer(context.Background(), cfg)
+	if err != nil {
+		panic(err)
+	}
+	return srv.Handler
 }
 
 func TestAddGaugeMetric(t *testing.T) {

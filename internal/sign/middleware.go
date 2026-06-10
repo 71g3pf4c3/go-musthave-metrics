@@ -9,10 +9,6 @@ import (
 func Middleware(key string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if key == "" {
-				next.ServeHTTP(w, r)
-				return
-			}
 
 			if err := verifyRequest(w, r, key); err != nil {
 				return

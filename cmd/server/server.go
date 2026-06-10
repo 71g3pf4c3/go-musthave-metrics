@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"log"
 	"net/http"
 	"time"
 
@@ -13,9 +12,9 @@ import (
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/service"
 )
 
-func newServer(cfg *config.ServerConfig) *http.Server {
+func newServer(ctx context.Context, cfg *config.ServerConfig) (*http.Server, error) {
 	if err := logger.Initialize(cfg.LogLevel); err != nil {
-		log.Fatalf("failed to initialize logger: %v", err)
+		return nil, err
 	}
 
 	var repo repository.Repository
@@ -25,7 +24,7 @@ func newServer(cfg *config.ServerConfig) *http.Server {
 	if cfg.DatabaseDSN != "" {
 		pgStore, err := repository.NewPGStorage(cfg.DatabaseDSN)
 		if err != nil {
-			log.Fatalf("failed to connect to database: %v", err)
+			return nil, err
 		}
 		repo = pgStore
 	} else {
@@ -36,7 +35,7 @@ func newServer(cfg *config.ServerConfig) *http.Server {
 	h := handlers.NewMetricsHandler(svc)
 
 	if !useDBStorage && useFileStorage && cfg.RestoreFlag {
-		if err := svc.Restore(context.Background(), cfg.FileStoragePath); err != nil {
+		if err := svc.Restore(ctx, cfg.FileStoragePath); err != nil {
 			logger.Sugar.Infof("restore from %s: %v", cfg.FileStoragePath, err)
 		}
 	}
@@ -46,7 +45,7 @@ func newServer(cfg *config.ServerConfig) *http.Server {
 		dumpTicker := time.NewTicker(time.Duration(cfg.StoreInterval) * time.Second)
 		go func() {
 			for range dumpTicker.C {
-				if err := svc.Dump(context.Background(), cfg.FileStoragePath); err != nil {
+				if err := svc.Dump(ctx, cfg.FileStoragePath); err != nil {
 					logger.Sugar.Errorf("failed to dump data: %v", err)
 				}
 			}
@@ -62,5 +61,5 @@ func newServer(cfg *config.ServerConfig) *http.Server {
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  120 * time.Second,
-	}
+	}, nil
 }

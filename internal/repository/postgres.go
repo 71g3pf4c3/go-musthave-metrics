@@ -6,6 +6,7 @@ import (
 	stderrs "errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/logger"
@@ -247,14 +248,9 @@ func (p *PGStorage) UpdateBatch(ctx context.Context, metrics []models.Metrics) e
 	}
 
 	return withPGRetry(ctx, func(ctx context.Context) error {
-		tx, err := p.db.BeginTx(ctx, nil)
-		if err != nil {
-			return err
-		}
-
-		defer func() {
-			_ = tx.Rollback()
-		}()
+		placeholders := make([]string, 0, len(metrics))
+		args := make([]any, 0, len(metrics)*4)
+		idx := 1
 
 		for _, metric := range metrics {
 			switch metric.MType {
@@ -262,32 +258,37 @@ func (p *PGStorage) UpdateBatch(ctx context.Context, metrics []models.Metrics) e
 				if metric.Value == nil {
 					return fmt.Errorf("invalid gauge metric")
 				}
-				if _, err := tx.ExecContext(ctx, `
-					INSERT INTO metrics (name, kind, value_double)
-					VALUES ($1, $2, $3)
-					ON CONFLICT (name, kind)
-					DO UPDATE SET value_double = EXCLUDED.value_double
-				`, metric.ID, models.Gauge, *metric.Value); err != nil {
-					return err
-				}
+				placeholders = append(placeholders, fmt.Sprintf("($%d,$%d,$%d,$%d)", idx, idx+1, idx+2, idx+3))
+				args = append(args, metric.ID, models.Gauge, *metric.Value, nil)
 			case models.Counter:
 				if metric.Delta == nil {
 					return fmt.Errorf("invalid counter metric")
 				}
-				if _, err := tx.ExecContext(ctx, `
-					INSERT INTO metrics (name, kind, value_bigint)
-					VALUES ($1, $2, $3)
-					ON CONFLICT (name, kind)
-					DO UPDATE SET value_bigint = metrics.value_bigint + EXCLUDED.value_bigint
-				`, metric.ID, models.Counter, *metric.Delta); err != nil {
-					return err
-				}
+				placeholders = append(placeholders, fmt.Sprintf("($%d,$%d,$%d,$%d)", idx, idx+1, idx+2, idx+3))
+				args = append(args, metric.ID, models.Counter, nil, *metric.Delta)
 			default:
 				return fmt.Errorf("unsupported metric type")
 			}
+			idx += 4
 		}
 
-		return tx.Commit()
+		query := `
+			INSERT INTO metrics (name, kind, value_double, value_bigint)
+			VALUES ` + strings.Join(placeholders, ",") + `
+			ON CONFLICT (name, kind)
+			DO UPDATE SET
+				value_double = CASE
+					WHEN EXCLUDED.kind = 'gauge' THEN EXCLUDED.value_double
+					ELSE metrics.value_double
+				END,
+				value_bigint = CASE
+					WHEN EXCLUDED.kind = 'counter' THEN metrics.value_bigint + EXCLUDED.value_bigint
+					ELSE metrics.value_bigint
+				END
+		`
+
+		_, err := p.db.ExecContext(ctx, query, args...)
+		return err
 	})
 }
 

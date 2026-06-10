@@ -1,6 +1,6 @@
 CREATE TABLE IF NOT EXISTS metrics (
-    name TEXT NOT NULL,
-    kind TEXT NOT NULL,
+    name VARCHAR(256) NOT NULL,
+    kind VARCHAR(16) NOT NULL,
     value_double DOUBLE PRECISION,
     value_bigint BIGINT,
     CONSTRAINT metrics_kind_check CHECK (kind IN ('gauge', 'counter')),
