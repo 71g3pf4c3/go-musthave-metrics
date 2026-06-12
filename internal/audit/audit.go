@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/logger"
+	"github.com/hashicorp/go-retryablehttp"
 )
 
 // Event is emitted after each successful metric write.
@@ -91,46 +92,21 @@ func (f *FileObserver) Close() error {
 	return f.file.Close()
 }
 
-// retryTransport wraps http.RoundTripper with simple retry logic.
-type retryTransport struct {
-	base   http.RoundTripper
-	delays []time.Duration
-}
-
-func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	resp, err := t.base.RoundTrip(req)
-	if err == nil {
-		return resp, nil
-	}
-	for _, delay := range t.delays {
-		time.Sleep(delay)
-		resp, err = t.base.RoundTrip(req)
-		if err == nil {
-			return resp, nil
-		}
-	}
-	return nil, err
-}
-
 // HTTPObserver sends events as JSON POST requests to a remote URL.
-// Failed requests are retried with delays of 1s, 3s, 5s.
+// Failed requests are retried automatically (up to 4 attempts with backoff).
 type HTTPObserver struct {
 	url    string
-	client *http.Client
+	client *retryablehttp.Client
 }
 
 // NewHTTPObserver creates an HTTPObserver that posts events to url.
 func NewHTTPObserver(url string) *HTTPObserver {
-	return &HTTPObserver{
-		url: url,
-		client: &http.Client{
-			Timeout: 5 * time.Second,
-			Transport: &retryTransport{
-				base:   http.DefaultTransport,
-				delays: []time.Duration{time.Second, 3 * time.Second, 5 * time.Second},
-			},
-		},
-	}
+	c := retryablehttp.NewClient()
+	c.RetryMax = 3
+	c.RetryWaitMin = time.Second
+	c.RetryWaitMax = 5 * time.Second
+	c.Logger = nil // silence default stderr logging
+	return &HTTPObserver{url: url, client: c}
 }
 
 // Notify sends the event via HTTP POST.
