@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/logger"
@@ -26,30 +27,47 @@ type Observer interface {
 }
 
 // Notifier broadcasts an Event to all registered observers.
+// Each observer is notified in a separate goroutine so a slow observer
+// does not block others. At most 100 goroutines run concurrently.
 type Notifier struct {
 	observers []Observer
+	sem       chan struct{}
 }
 
 // NewNotifier creates a Notifier with the given observers.
 func NewNotifier(observers ...Observer) *Notifier {
-	return &Notifier{observers: observers}
+	return &Notifier{
+		observers: observers,
+		sem:       make(chan struct{}, 100),
+	}
 }
 
-// Notify sends the event to all observers.
+// Notify sends the event to every observer concurrently.
 func (n *Notifier) Notify(e Event) {
 	for _, o := range n.observers {
-		o.Notify(e)
+		o := o
+		n.sem <- struct{}{}
+		go func() {
+			defer func() { <-n.sem }()
+			o.Notify(e)
+		}()
 	}
 }
 
 // FileObserver appends events as newline-delimited JSON to a file.
+// The file is kept open for the lifetime of the observer; call Close when done.
 type FileObserver struct {
-	path string
+	file *os.File
+	mu   sync.Mutex
 }
 
-// NewFileObserver creates a FileObserver that writes to path.
-func NewFileObserver(path string) *FileObserver {
-	return &FileObserver{path: path}
+// NewFileObserver opens path for appending and returns a FileObserver.
+func NewFileObserver(path string) (*FileObserver, error) {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		return nil, fmt.Errorf("audit file: open %s: %w", path, err)
+	}
+	return &FileObserver{file: f}, nil
 }
 
 // Notify appends the event to the file.
@@ -60,19 +78,42 @@ func (f *FileObserver) Notify(e Event) {
 		return
 	}
 
-	file, err := os.OpenFile(f.path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
-	if err != nil {
-		logger.Sugar.Errorf("audit file: open %s: %v", f.path, err)
-		return
-	}
-	defer file.Close()
+	f.mu.Lock()
+	defer f.mu.Unlock()
 
-	if _, err := fmt.Fprintf(file, "%s\n", data); err != nil {
+	if _, err := fmt.Fprintf(f.file, "%s\n", data); err != nil {
 		logger.Sugar.Errorf("audit file: write: %v", err)
 	}
 }
 
+// Close closes the underlying file.
+func (f *FileObserver) Close() error {
+	return f.file.Close()
+}
+
+// retryTransport wraps http.RoundTripper with simple retry logic.
+type retryTransport struct {
+	base   http.RoundTripper
+	delays []time.Duration
+}
+
+func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := t.base.RoundTrip(req)
+	if err == nil {
+		return resp, nil
+	}
+	for _, delay := range t.delays {
+		time.Sleep(delay)
+		resp, err = t.base.RoundTrip(req)
+		if err == nil {
+			return resp, nil
+		}
+	}
+	return nil, err
+}
+
 // HTTPObserver sends events as JSON POST requests to a remote URL.
+// Failed requests are retried with delays of 1s, 3s, 5s.
 type HTTPObserver struct {
 	url    string
 	client *http.Client
@@ -81,8 +122,14 @@ type HTTPObserver struct {
 // NewHTTPObserver creates an HTTPObserver that posts events to url.
 func NewHTTPObserver(url string) *HTTPObserver {
 	return &HTTPObserver{
-		url:    url,
-		client: &http.Client{Timeout: 5 * time.Second},
+		url: url,
+		client: &http.Client{
+			Timeout: 5 * time.Second,
+			Transport: &retryTransport{
+				base:   http.DefaultTransport,
+				delays: []time.Duration{time.Second, 3 * time.Second, 5 * time.Second},
+			},
+		},
 	}
 }
 

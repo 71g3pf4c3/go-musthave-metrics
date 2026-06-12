@@ -21,11 +21,11 @@ import (
 // MetricsHandler holds all HTTP handlers for the metrics API.
 type MetricsHandler struct {
 	service  service.Service
-	notifier *audit.Notifier
+	notifier audit.Observer
 }
 
 // NewMetricsHandler creates a handler. notifier may be nil — audit is skipped.
-func NewMetricsHandler(metricService service.Service, notifier *audit.Notifier) *MetricsHandler {
+func NewMetricsHandler(metricService service.Service, notifier audit.Observer) *MetricsHandler {
 	return &MetricsHandler{service: metricService, notifier: notifier}
 }
 

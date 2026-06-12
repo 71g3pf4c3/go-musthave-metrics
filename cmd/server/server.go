@@ -36,7 +36,11 @@ func newServer(ctx context.Context, cfg *config.ServerConfig) (*http.Server, err
 
 	var auditObservers []audit.Observer
 	if cfg.AuditFile != "" {
-		auditObservers = append(auditObservers, audit.NewFileObserver(cfg.AuditFile))
+		fo, err := audit.NewFileObserver(cfg.AuditFile)
+		if err != nil {
+			return nil, err
+		}
+		auditObservers = append(auditObservers, fo)
 		logger.Sugar.Infof("audit file sink enabled: %s", cfg.AuditFile)
 	}
 	if cfg.AuditURL != "" {

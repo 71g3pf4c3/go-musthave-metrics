@@ -15,51 +15,54 @@ import (
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/service"
 )
 
-func newBenchHandler() *handlers.MetricsHandler {
+func newBenchHandler(b *testing.B) *handlers.MetricsHandler {
+	b.Helper()
 	return handlers.NewMetricsHandler(service.New(repository.NewMemStorage()), nil)
 }
 
 func BenchmarkUpdateHandler(b *testing.B) {
-	h := newBenchHandler()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	h := newBenchHandler(b)
+	for b.Loop() {
+		b.StopTimer()
 		r := httptest.NewRequest(http.MethodPost, "/update/gauge/cpu/42.5", nil)
 		r.SetPathValue("kind", "gauge")
 		r.SetPathValue("name", "cpu")
 		r.SetPathValue("value", "42.5")
 		w := httptest.NewRecorder()
+		b.StartTimer()
 		h.UpdateHandler(w, r)
 	}
 }
 
 func BenchmarkJSONUpdateHandler(b *testing.B) {
-	h := newBenchHandler()
+	h := newBenchHandler(b)
 	v := 42.5
 	m := models.Metrics{ID: "cpu", MType: models.Gauge, Value: &v}
 	body, _ := json.Marshal(m)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
+		b.StopTimer()
 		r := httptest.NewRequest(http.MethodPost, "/update", bytes.NewReader(body))
 		r.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
+		b.StartTimer()
 		h.JSONUpdateHandler(w, r)
 	}
 }
 
 func BenchmarkBatchUpdateHandler(b *testing.B) {
-	h := newBenchHandler()
-
+	h := newBenchHandler(b)
 	batch := make([]models.Metrics, 30)
 	for i := range batch {
 		v := float64(i)
 		batch[i] = models.Metrics{ID: fmt.Sprintf("m%d", i), MType: models.Gauge, Value: &v}
 	}
 	body, _ := json.Marshal(batch)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
+		b.StopTimer()
 		r := httptest.NewRequest(http.MethodPost, "/updates", bytes.NewReader(body))
 		r.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
+		b.StartTimer()
 		h.BatchUpdateHandler(w, r)
 	}
 }
@@ -73,10 +76,11 @@ func BenchmarkListHandler(b *testing.B) {
 		_ = repo.AddCounter(ctx, fmt.Sprintf("counter%d", i), int64(i))
 	}
 	h := handlers.NewMetricsHandler(service.New(repo), nil)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
+		b.StopTimer()
 		r := httptest.NewRequest(http.MethodGet, "/", nil)
 		w := httptest.NewRecorder()
+		b.StartTimer()
 		h.ListHandler(w, r)
 	}
 }
