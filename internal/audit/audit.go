@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"sync"
@@ -27,31 +28,62 @@ type Observer interface {
 	Notify(e Event)
 }
 
+// asyncObserver wraps an Observer with a buffered channel and a dedicated
+// goroutine that drains it. If the buffer is full, new events are dropped.
+type asyncObserver struct {
+	inner Observer
+	ch    chan Event
+}
+
+func newAsyncObserver(o Observer) *asyncObserver {
+	a := &asyncObserver{inner: o, ch: make(chan Event, 256)}
+	go func() {
+		for e := range a.ch {
+			a.inner.Notify(e)
+		}
+	}()
+	return a
+}
+
+func (a *asyncObserver) Notify(e Event) {
+	select {
+	case a.ch <- e:
+	default:
+		logger.Sugar.Warnf("audit: observer %T queue full, dropping event", a.inner)
+	}
+}
+
+func (a *asyncObserver) Close() {
+	close(a.ch)
+}
+
 // Notifier broadcasts an Event to all registered observers.
-// Each observer is notified in a separate goroutine so a slow observer
-// does not block others. At most 100 goroutines run concurrently.
+// Each observer runs independently in its own goroutine with a buffered queue.
+// A slow observer does not block others.
 type Notifier struct {
-	observers []Observer
-	sem       chan struct{}
+	observers []*asyncObserver
 }
 
 // NewNotifier creates a Notifier with the given observers.
 func NewNotifier(observers ...Observer) *Notifier {
-	return &Notifier{
-		observers: observers,
-		sem:       make(chan struct{}, 100),
+	async := make([]*asyncObserver, len(observers))
+	for i, o := range observers {
+		async[i] = newAsyncObserver(o)
+	}
+	return &Notifier{observers: async}
+}
+
+// Notify sends the event to every observer.
+func (n *Notifier) Notify(e Event) {
+	for _, o := range n.observers {
+		o.Notify(e)
 	}
 }
 
-// Notify sends the event to every observer concurrently.
-func (n *Notifier) Notify(e Event) {
+// Close stops all observer goroutines. Remaining queued events are processed before return.
+func (n *Notifier) Close() {
 	for _, o := range n.observers {
-		o := o
-		n.sem <- struct{}{}
-		go func() {
-			defer func() { <-n.sem }()
-			o.Notify(e)
-		}()
+		o.Close()
 	}
 }
 
@@ -122,7 +154,10 @@ func (h *HTTPObserver) Notify(e Event) {
 		logger.Sugar.Errorf("audit http: post to %s: %v", h.url, err)
 		return
 	}
-	defer resp.Body.Close()
+	defer func() {
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+	}()
 
 	if resp.StatusCode >= http.StatusBadRequest {
 		logger.Sugar.Errorf("audit http: server returned %d", resp.StatusCode)
