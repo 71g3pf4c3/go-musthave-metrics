@@ -11,11 +11,10 @@ import (
 
 func newTestServer(t *testing.T) http.Handler {
 	t.Helper()
-
 	cfg := &config.ServerConfig{Address: "localhost:0"}
 	srv, err := newServer(context.Background(), cfg)
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
 	return srv.Handler
 }

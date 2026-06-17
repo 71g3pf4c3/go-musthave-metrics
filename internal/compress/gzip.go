@@ -5,9 +5,16 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/logger"
 )
+
+var gzipWriterPool = sync.Pool{
+	New: func() any {
+		return gzip.NewWriter(io.Discard)
+	},
+}
 
 type compressWriter struct {
 	w  http.ResponseWriter
@@ -16,10 +23,9 @@ type compressWriter struct {
 
 func newCompressWriter(w http.ResponseWriter) *compressWriter {
 	w.Header().Set("Content-Encoding", "gzip")
-	return &compressWriter{
-		w:  w,
-		zw: gzip.NewWriter(w),
-	}
+	zw := gzipWriterPool.Get().(*gzip.Writer)
+	zw.Reset(w)
+	return &compressWriter{w: w, zw: zw}
 }
 
 func (c *compressWriter) Header() http.Header {
@@ -35,7 +41,9 @@ func (c *compressWriter) WriteHeader(statusCode int) {
 }
 
 func (c *compressWriter) Close() error {
-	return c.zw.Close()
+	err := c.zw.Close()
+	gzipWriterPool.Put(c.zw)
+	return err
 }
 
 type compressReader struct {

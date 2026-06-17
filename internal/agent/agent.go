@@ -41,8 +41,7 @@ func New(cfg config.AgentConfig) *Agent {
 	if rl <= 0 {
 		rl = 1
 	}
-	logger.Sugar.Infof("initializing agent, server=%s, poll=%ds, report=%ds",
-		cfg.Address, cfg.PollInterval, cfg.ReportInterval)
+	logger.Sugar.Infof("initializing agent, server=%s, poll=%ds, report=%ds", cfg.Address, cfg.PollInterval, cfg.ReportInterval)
 	return &Agent{
 		client:         resty.New(),
 		serverAddr:     cfg.Address,
@@ -55,13 +54,10 @@ func New(cfg config.AgentConfig) *Agent {
 }
 
 func (a *Agent) Collect() {
-	a.m.Lock()
-	defer a.m.Unlock()
-
 	var ms runtime.MemStats
 	runtime.ReadMemStats(&ms)
-	logger.Sugar.Debug("collecting runtime metrics")
 
+	a.m.Lock()
 	a.gauges["Alloc"] = float64(ms.Alloc)
 	a.gauges["BuckHashSys"] = float64(ms.BuckHashSys)
 	a.gauges["Frees"] = float64(ms.Frees)
@@ -90,27 +86,25 @@ func (a *Agent) Collect() {
 	a.gauges["Sys"] = float64(ms.Sys)
 	a.gauges["TotalAlloc"] = float64(ms.TotalAlloc)
 	a.gauges["RandomValue"] = rand.Float64()
-
 	a.pollCount++
-	logger.Sugar.Debugf("metrics collected, pollCount=%d", a.pollCount)
+	a.m.Unlock()
 }
 
 func (a *Agent) CollectExtra() {
+	v, verr := mem.VirtualMemory()
+	c, cerr := cpu.Percent(0, true)
+
 	a.m.Lock()
-	defer a.m.Unlock()
-
-	if vm, err := mem.VirtualMemory(); err == nil {
-		a.gauges["TotalMemory"] = float64(vm.Total)
-		a.gauges["FreeMemory"] = float64(vm.Free)
+	if verr == nil {
+		a.gauges["TotalMemory"] = float64(v.Total)
+		a.gauges["FreeMemory"] = float64(v.Free)
 	}
-
-	if cpus, err := cpu.Percent(0, true); err == nil {
-		for i, c := range cpus {
-			a.gauges[fmt.Sprintf("CPUutilization%d", i+1)] = c
+	if cerr == nil {
+		for i, load := range c {
+			a.gauges[fmt.Sprintf("CPUutilization%d", i+1)] = load
 		}
 	}
-
-	logger.Sugar.Debug("extra metrics collected")
+	a.m.Unlock()
 }
 
 func (a *Agent) BuildBatch() []models.Metrics {

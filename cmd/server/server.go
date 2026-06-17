@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/71g3pf4c3/go-musthave-metrics/internal/audit"
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/config"
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/handlers"
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/logger"
@@ -32,7 +33,23 @@ func newServer(ctx context.Context, cfg *config.ServerConfig) (*http.Server, err
 	}
 
 	svc := service.New(repo)
-	h := handlers.NewMetricsHandler(svc)
+
+	var auditObservers []audit.Observer
+	if cfg.AuditFile != "" {
+		fo, err := audit.NewFileObserver(cfg.AuditFile)
+		if err != nil {
+			return nil, err
+		}
+		auditObservers = append(auditObservers, fo)
+		logger.Sugar.Infof("audit file sink enabled: %s", cfg.AuditFile)
+	}
+	if cfg.AuditURL != "" {
+		auditObservers = append(auditObservers, audit.NewHTTPObserver(cfg.AuditURL))
+		logger.Sugar.Infof("audit http sink enabled: %s", cfg.AuditURL)
+	}
+	notifier := audit.NewNotifier(auditObservers...)
+
+	h := handlers.NewMetricsHandler(svc, notifier)
 
 	if !useDBStorage && useFileStorage && cfg.RestoreFlag {
 		if err := svc.Restore(ctx, cfg.FileStoragePath); err != nil {
