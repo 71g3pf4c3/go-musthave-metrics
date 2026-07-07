@@ -9,7 +9,10 @@ import (
 )
 
 func main() {
-	cfg := config.NewAgentConfig()
+	cfg, err := config.NewAgentConfig()
+	if err != nil {
+		log.Fatal(err)
+	}
 	if err := logger.Initialize("debug"); err != nil {
 		log.Fatalf("failed to initialize logger: %v", err)
 	}
