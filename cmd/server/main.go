@@ -1,3 +1,21 @@
 package main
 
-func main() {}
+import (
+	"context"
+	"log"
+
+	"github.com/71g3pf4c3/go-musthave-metrics/internal/config"
+)
+
+func main() {
+	cfg := config.NewServerConfig()
+	ctx := context.Background()
+	srv, err := newServer(ctx, cfg)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if err := srv.ListenAndServe(); err != nil {
+		log.Fatal(err)
+	}
+}
