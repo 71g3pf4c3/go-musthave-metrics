@@ -2,7 +2,7 @@ package config
 
 import (
 	"flag"
-	"log"
+	"fmt"
 	"os"
 	"strings"
 
@@ -29,7 +29,7 @@ type ServerConfig struct {
 	AuditURL        string `env:"AUDIT_URL"`
 }
 
-func NewAgentConfig() *AgentConfig {
+func NewAgentConfig() (*AgentConfig, error) {
 	addressFlag := flag.String("a", "localhost:8080", "server endpoint address")
 	pollInterval := flag.Int("p", 2, "poll interval in seconds")
 	reportInterval := flag.Int("r", 10, "report interval in seconds")
@@ -47,7 +47,7 @@ func NewAgentConfig() *AgentConfig {
 
 	var envCfg AgentConfig
 	if err := env.Parse(&envCfg); err != nil {
-		log.Fatal(err)
+		return nil, fmt.Errorf("parse agent env config: %w", err)
 	}
 	if envCfg.Address != "" {
 		cfg.Address = envCfg.Address
@@ -69,10 +69,10 @@ func NewAgentConfig() *AgentConfig {
 		cfg.Address = "http://" + cfg.Address
 	}
 
-	return &cfg
+	return &cfg, nil
 }
 
-func NewServerConfig() *ServerConfig {
+func NewServerConfig() (*ServerConfig, error) {
 	addressFlag := flag.String("a", "localhost:8080", "server listen address")
 	logLevel := flag.String("l", "info", "server log level")
 	storeInterval := flag.Int("i", 300, "store interval in seconds (0 for synchronous writes)")
@@ -98,7 +98,7 @@ func NewServerConfig() *ServerConfig {
 
 	var envCfg ServerConfig
 	if err := env.Parse(&envCfg); err != nil {
-		log.Fatal(err)
+		return nil, fmt.Errorf("parse server env config: %w", err)
 	}
 	if envCfg.Address != "" {
 		cfg.Address = envCfg.Address
@@ -128,5 +128,5 @@ func NewServerConfig() *ServerConfig {
 		cfg.AuditURL = envCfg.AuditURL
 	}
 
-	return &cfg
+	return &cfg, nil
 }
