@@ -9,6 +9,8 @@ const (
 	Gauge = "gauge"
 )
 
+// generate:reset
+//
 // Metrics is a single metric. Used in JSON requests and responses.
 // Delta is set for counter, Value — for gauge.
 type Metrics struct {

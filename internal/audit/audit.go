@@ -15,6 +15,8 @@ import (
 	"github.com/hashicorp/go-retryablehttp"
 )
 
+// generate:reset
+//
 // Event is emitted after each successful metric write.
 type Event struct {
 	TS        int64    `json:"ts"`         // unix timestamp
