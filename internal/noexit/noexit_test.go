@@ -1,4 +1,4 @@
-package main
+package noexit
 
 import (
 	"testing"

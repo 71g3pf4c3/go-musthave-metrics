@@ -1,4 +1,4 @@
-package main
+package noexit
 
 import (
 	"go/ast"
@@ -27,7 +27,6 @@ func run(pass *analysis.Pass) (interface{}, error) {
 
 			switch fn := call.Fun.(type) {
 			case *ast.Ident:
-				// Built-in panic().
 				if fn.Name == "panic" {
 					pass.Reportf(call.Pos(), "avoid using panic")
 				}
@@ -53,7 +52,6 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	return nil, nil
 }
 
-// isInsideMainFunc checks whether pos falls inside func main() of package main.
 func isInsideMainFunc(node ast.Node, file *ast.File, pkgName string) bool {
 	if pkgName != "main" {
 		return false
