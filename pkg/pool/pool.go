@@ -10,13 +10,12 @@ type Resetter interface {
 // Pool is a generic wrapper around sync.Pool for types with a Reset() method.
 // On Put the object is automatically reset before being returned to the pool.
 type Pool[T Resetter] struct {
-	p    sync.Pool
-	newF func() T
+	p sync.Pool
 }
 
 // New creates a Pool. The constructor f is called when the pool is empty.
 func New[T Resetter](f func() T) *Pool[T] {
-	p := &Pool[T]{newF: f}
+	p := &Pool[T]{}
 	p.p.New = func() any { return f() }
 	return p
 }
