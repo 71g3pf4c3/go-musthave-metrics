@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"go/ast"
 	"go/parser"
+	"go/printer"
 	"go/token"
+	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
@@ -59,19 +61,18 @@ const (
 	kindMap
 	kindStruct
 	kindPointer
-	kindInterface
-	kindOther
+	kindOther // includes interfaces and unrecognized types
 )
 
 // scanPackages walks directories starting from root and collects annotated structs grouped by directory.
 func scanPackages(root string) (map[string][]structInfo, error) {
 	result := make(map[string][]structInfo)
 
-	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		if !info.IsDir() {
+		if !d.IsDir() {
 			return nil
 		}
 		base := filepath.Base(path)
@@ -195,34 +196,18 @@ func classifyExpr(expr ast.Expr) fieldKind {
 		return kindMap
 	case *ast.SelectorExpr:
 		return kindStruct
-	case *ast.InterfaceType:
-		return kindInterface
 	default:
 		return kindOther
 	}
 }
 
-// exprString converts an ast.Expr to its Go source string.
+// exprString renders an ast.Expr as valid Go source using go/printer.
 func exprString(expr ast.Expr) string {
-	switch e := expr.(type) {
-	case *ast.Ident:
-		return e.Name
-	case *ast.StarExpr:
-		return "*" + exprString(e.X)
-	case *ast.SelectorExpr:
-		return exprString(e.X) + "." + e.Sel.Name
-	case *ast.ArrayType:
-		if e.Len == nil {
-			return "[]" + exprString(e.Elt)
-		}
-		return "[...]" + exprString(e.Elt)
-	case *ast.MapType:
-		return "map[" + exprString(e.Key) + "]" + exprString(e.Value)
-	case *ast.InterfaceType:
-		return "interface{}"
-	default:
-		return fmt.Sprintf("%T", expr)
+	var buf bytes.Buffer
+	if err := printer.Fprint(&buf, token.NewFileSet(), expr); err != nil {
+		return fmt.Sprintf("<error: %v>", err)
 	}
+	return buf.String()
 }
 
 // generateFile writes reset.gen.go in the given directory.
