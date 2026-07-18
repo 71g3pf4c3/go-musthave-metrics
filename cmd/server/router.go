@@ -1,10 +1,12 @@
 package main
 
 import (
+	"crypto/ecdh"
 	"net/http"
 	"time"
 
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/compress"
+	servercrypto "github.com/71g3pf4c3/go-musthave-metrics/internal/crypto"
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/handlers"
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/logger"
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/sign"
@@ -12,13 +14,16 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 )
 
-func newRouter(h *handlers.MetricsHandler, key string) http.Handler {
+func newRouter(h *handlers.MetricsHandler, key string, privKey *ecdh.PrivateKey) http.Handler {
 	r := chi.NewRouter()
 
 	r.Use(logger.RequestLogger)
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
+	if privKey != nil {
+		r.Use(servercrypto.DecryptMiddleware(privKey))
+	}
 	r.Use(compress.CompressMiddleware)
 	if key != "" {
 		r.Use(sign.Middleware(key))

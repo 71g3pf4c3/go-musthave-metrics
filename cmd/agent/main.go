@@ -18,6 +18,9 @@ func main() {
 	if err := logger.Initialize("debug"); err != nil {
 		log.Fatalf("failed to initialize logger: %v", err)
 	}
-	a := agent.New(*cfg)
+	a, err := agent.New(*cfg)
+	if err != nil {
+		log.Fatal(err)
+	}
 	a.Run()
 }

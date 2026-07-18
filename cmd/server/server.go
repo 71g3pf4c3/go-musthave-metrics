@@ -2,11 +2,13 @@ package main
 
 import (
 	"context"
+	"crypto/ecdh"
 	"net/http"
 	"time"
 
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/audit"
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/config"
+	servercrypto "github.com/71g3pf4c3/go-musthave-metrics/internal/crypto"
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/handlers"
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/logger"
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/repository"
@@ -69,7 +71,17 @@ func newServer(ctx context.Context, cfg *config.ServerConfig) (*http.Server, err
 		}()
 	}
 
-	router := newRouter(h, cfg.Key)
+	var privKey *ecdh.PrivateKey
+	if cfg.CryptoKey != "" {
+		var err error
+		privKey, err = servercrypto.LoadPrivateKey(cfg.CryptoKey)
+		if err != nil {
+			return nil, err
+		}
+		logger.Sugar.Infof("X25519 ECDH decryption enabled")
+	}
+
+	router := newRouter(h, cfg.Key, privKey)
 
 	logger.Sugar.Infof("starting server on %s", cfg.Address)
 	return &http.Server{

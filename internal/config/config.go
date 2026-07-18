@@ -15,6 +15,7 @@ type AgentConfig struct {
 	ReportInterval int    `env:"REPORT_INTERVAL"`
 	Key            string `env:"KEY"`
 	RateLimit      int    `env:"RATE_LIMIT"`
+	CryptoKey      string `env:"CRYPTO_KEY"`
 }
 
 type ServerConfig struct {
@@ -25,6 +26,7 @@ type ServerConfig struct {
 	RestoreFlag     bool   `env:"RESTORE"`
 	DatabaseDSN     string `env:"DATABASE_DSN"`
 	Key             string `env:"KEY"`
+	CryptoKey       string `env:"CRYPTO_KEY"`
 	AuditFile       string `env:"AUDIT_FILE"`
 	AuditURL        string `env:"AUDIT_URL"`
 }
@@ -35,6 +37,7 @@ func NewAgentConfig() (*AgentConfig, error) {
 	reportInterval := flag.Int("r", 10, "report interval in seconds")
 	keyFlag := flag.String("k", "", "hash key")
 	rateLimitFlag := flag.Int("l", 1, "rate limit for outgoing requests")
+	cryptoKeyFlag := flag.String("crypto-key", "", "path to public key file")
 	flag.Parse()
 
 	cfg := AgentConfig{
@@ -43,6 +46,7 @@ func NewAgentConfig() (*AgentConfig, error) {
 		ReportInterval: *reportInterval,
 		Key:            *keyFlag,
 		RateLimit:      *rateLimitFlag,
+		CryptoKey:      *cryptoKeyFlag,
 	}
 
 	var envCfg AgentConfig
@@ -64,6 +68,9 @@ func NewAgentConfig() (*AgentConfig, error) {
 	if envCfg.RateLimit != 0 {
 		cfg.RateLimit = envCfg.RateLimit
 	}
+	if envCfg.CryptoKey != "" {
+		cfg.CryptoKey = envCfg.CryptoKey
+	}
 
 	if !strings.HasPrefix(cfg.Address, "http://") && !strings.HasPrefix(cfg.Address, "https://") {
 		cfg.Address = "http://" + cfg.Address
@@ -80,6 +87,7 @@ func NewServerConfig() (*ServerConfig, error) {
 	restoreFlag := flag.Bool("r", true, "restore data from file on startup")
 	databaseDSN := flag.String("d", "", "database dsn")
 	keyFlag := flag.String("k", "", "hash key")
+	cryptoKeyFlag := flag.String("crypto-key", "", "path to private key file")
 	auditFileFlag := flag.String("audit-file", "", "audit log file path")
 	auditURLFlag := flag.String("audit-url", "", "audit log remote URL")
 	flag.Parse()
@@ -92,6 +100,7 @@ func NewServerConfig() (*ServerConfig, error) {
 		RestoreFlag:     *restoreFlag,
 		DatabaseDSN:     *databaseDSN,
 		Key:             *keyFlag,
+		CryptoKey:       *cryptoKeyFlag,
 		AuditFile:       *auditFileFlag,
 		AuditURL:        *auditURLFlag,
 	}
@@ -114,6 +123,9 @@ func NewServerConfig() (*ServerConfig, error) {
 	}
 	if envCfg.Key != "" {
 		cfg.Key = envCfg.Key
+	}
+	if envCfg.CryptoKey != "" {
+		cfg.CryptoKey = envCfg.CryptoKey
 	}
 	if envCfg.FileStoragePath != "" {
 		cfg.FileStoragePath = envCfg.FileStoragePath

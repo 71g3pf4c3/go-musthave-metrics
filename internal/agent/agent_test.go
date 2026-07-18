@@ -25,7 +25,11 @@ func newAgent(srv *httptest.Server, extra ...func(*config.AgentConfig)) *agent.A
 	for _, fn := range extra {
 		fn(&cfg)
 	}
-	return agent.New(cfg)
+	a, err := agent.New(cfg)
+	if err != nil {
+		panic(err)
+	}
+	return a
 }
 
 func TestCollectAndReport_BatchSentToUpdates(t *testing.T) {
