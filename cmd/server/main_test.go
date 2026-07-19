@@ -12,7 +12,7 @@ import (
 func newTestServer(t *testing.T) http.Handler {
 	t.Helper()
 	cfg := &config.ServerConfig{Address: "localhost:0"}
-	srv, err := newServer(context.Background(), cfg)
+	srv, _, err := newServer(context.Background(), cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -155,12 +155,17 @@ func (a *Agent) worker(jobs <-chan []models.Metrics) {
 	}
 }
 
-func (a *Agent) Run() {
+func (a *Agent) Run(ctx context.Context) {
 	logger.Sugar.Infof("agent started, workers=%d", a.rateLimit)
 
+	var wg sync.WaitGroup
 	jobs := make(chan []models.Metrics, a.rateLimit)
 	for i := 0; i < a.rateLimit; i++ {
-		go a.worker(jobs)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			a.worker(jobs)
+		}()
 	}
 
 	pollTicker := time.NewTicker(time.Duration(a.pollInterval) * time.Second)
@@ -170,6 +175,16 @@ func (a *Agent) Run() {
 
 	for {
 		select {
+		case <-ctx.Done():
+			logger.Sugar.Infof("agent shutting down, sending final batch...")
+			batch := a.BuildBatch()
+			if len(batch) > 0 {
+				a.SendBatch(batch)
+			}
+			close(jobs)
+			wg.Wait()
+			logger.Sugar.Infof("agent stopped")
+			return
 		case <-pollTicker.C:
 			go a.Collect()
 			go a.CollectExtra()

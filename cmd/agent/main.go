@@ -1,7 +1,10 @@
 package main
 
 import (
+	"context"
 	"log"
+	"os/signal"
+	"syscall"
 
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/agent"
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/config"
@@ -22,5 +25,9 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	a.Run()
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT, syscall.SIGQUIT)
+	defer stop()
+
+	a.Run(ctx)
 }
