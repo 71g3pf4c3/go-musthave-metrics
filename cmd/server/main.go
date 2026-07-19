@@ -5,10 +5,15 @@ import (
 	"log"
 
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/config"
+	"github.com/71g3pf4c3/go-musthave-metrics/internal/version"
 )
 
 func main() {
-	cfg := config.NewServerConfig()
+	version.Print()
+	cfg, err := config.NewServerConfig()
+	if err != nil {
+		log.Fatal(err)
+	}
 	ctx := context.Background()
 	srv, err := newServer(ctx, cfg)
 	if err != nil {
