@@ -24,21 +24,25 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT, syscall.SIGQUIT)
 	defer stop()
 
-	srv, shutdown, err := newServer(ctx, cfg)
+	srv, cleanup, err := newServer(ctx, cfg)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	// Start server in a goroutine.
+	serverErr := make(chan error, 1)
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Fatal(err)
+			serverErr <- err
 		}
 	}()
 
-	// Wait for signal.
-	<-ctx.Done()
-	logger.Sugar.Infof("shutting down server...")
+	// Wait for signal or server error.
+	select {
+	case <-ctx.Done():
+		logger.Sugar.Infof("shutting down server...")
+	case err := <-serverErr:
+		log.Fatal(err)
+	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -47,10 +51,7 @@ func main() {
 		logger.Sugar.Errorf("server shutdown error: %v", err)
 	}
 
-	// Run cleanup (dump data, close notifier, etc.).
-	if shutdown != nil {
-		shutdown()
-	}
+	cleanup.Shutdown(shutdownCtx)
 
 	logger.Sugar.Infof("server stopped")
 }

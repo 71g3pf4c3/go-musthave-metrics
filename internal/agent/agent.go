@@ -158,12 +158,14 @@ func (a *Agent) worker(jobs <-chan []models.Metrics) {
 func (a *Agent) Run(ctx context.Context) {
 	logger.Sugar.Infof("agent started, workers=%d", a.rateLimit)
 
-	var wg sync.WaitGroup
+	var workerWg sync.WaitGroup
+	var collectWg sync.WaitGroup
+
 	jobs := make(chan []models.Metrics, a.rateLimit)
 	for i := 0; i < a.rateLimit; i++ {
-		wg.Add(1)
+		workerWg.Add(1)
 		go func() {
-			defer wg.Done()
+			defer workerWg.Done()
 			a.worker(jobs)
 		}()
 	}
@@ -176,18 +178,28 @@ func (a *Agent) Run(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			logger.Sugar.Infof("agent shutting down, sending final batch...")
+			logger.Sugar.Infof("agent shutting down, waiting for collectors...")
+			collectWg.Wait()
+
+			logger.Sugar.Infof("sending final batch...")
 			batch := a.BuildBatch()
 			if len(batch) > 0 {
 				a.SendBatch(batch)
 			}
 			close(jobs)
-			wg.Wait()
+			workerWg.Wait()
 			logger.Sugar.Infof("agent stopped")
 			return
 		case <-pollTicker.C:
-			go a.Collect()
-			go a.CollectExtra()
+			collectWg.Add(2)
+			go func() {
+				defer collectWg.Done()
+				a.Collect()
+			}()
+			go func() {
+				defer collectWg.Done()
+				a.CollectExtra()
+			}()
 		case <-reportTicker.C:
 			batch := a.BuildBatch()
 			if len(batch) > 0 {

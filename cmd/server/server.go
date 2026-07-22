@@ -15,7 +15,30 @@ import (
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/service"
 )
 
-func newServer(ctx context.Context, cfg *config.ServerConfig) (*http.Server, func(), error) {
+// serverCleanup holds resources that need cleanup on shutdown.
+type serverCleanup struct {
+	svc             *service.MetricsService
+	notifier        *audit.Notifier
+	dumpTicker      *time.Ticker
+	fileStoragePath string
+	needsDump       bool
+}
+
+// Shutdown performs graceful cleanup: stops ticker, dumps data, closes notifier.
+func (c *serverCleanup) Shutdown(ctx context.Context) {
+	if c.dumpTicker != nil {
+		c.dumpTicker.Stop()
+	}
+	if c.needsDump {
+		logger.Sugar.Infof("final dump to %s", c.fileStoragePath)
+		if err := c.svc.Dump(ctx, c.fileStoragePath); err != nil {
+			logger.Sugar.Errorf("final dump failed: %v", err)
+		}
+	}
+	c.notifier.Close()
+}
+
+func newServer(ctx context.Context, cfg *config.ServerConfig) (*http.Server, *serverCleanup, error) {
 	if err := logger.Initialize(cfg.LogLevel); err != nil {
 		return nil, nil, err
 	}
@@ -59,12 +82,18 @@ func newServer(ctx context.Context, cfg *config.ServerConfig) (*http.Server, fun
 		}
 	}
 
-	var dumpTicker *time.Ticker
+	cleanup := &serverCleanup{
+		svc:             svc,
+		notifier:        notifier,
+		fileStoragePath: cfg.FileStoragePath,
+		needsDump:       !useDBStorage && useFileStorage,
+	}
+
 	if !useDBStorage && useFileStorage && cfg.StoreInterval > 0 {
 		logger.Sugar.Infof("periodic dump enabled every %ds to %s", cfg.StoreInterval, cfg.FileStoragePath)
-		dumpTicker = time.NewTicker(time.Duration(cfg.StoreInterval) * time.Second)
+		cleanup.dumpTicker = time.NewTicker(time.Duration(cfg.StoreInterval) * time.Second)
 		go func() {
-			for range dumpTicker.C {
+			for range cleanup.dumpTicker.C {
 				if err := svc.Dump(ctx, cfg.FileStoragePath); err != nil {
 					logger.Sugar.Errorf("failed to dump data: %v", err)
 				}
@@ -84,20 +113,6 @@ func newServer(ctx context.Context, cfg *config.ServerConfig) (*http.Server, fun
 
 	router := newRouter(h, cfg.Key, privKey)
 
-	// Shutdown function: dump unsaved data, close notifier.
-	shutdown := func() {
-		if dumpTicker != nil {
-			dumpTicker.Stop()
-		}
-		if !useDBStorage && useFileStorage {
-			logger.Sugar.Infof("final dump to %s", cfg.FileStoragePath)
-			if err := svc.Dump(context.Background(), cfg.FileStoragePath); err != nil {
-				logger.Sugar.Errorf("final dump failed: %v", err)
-			}
-		}
-		notifier.Close()
-	}
-
 	logger.Sugar.Infof("starting server on %s", cfg.Address)
 	return &http.Server{
 		Addr:         cfg.Address,
@@ -105,5 +120,5 @@ func newServer(ctx context.Context, cfg *config.ServerConfig) (*http.Server, fun
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  120 * time.Second,
-	}, shutdown, nil
+	}, cleanup, nil
 }
