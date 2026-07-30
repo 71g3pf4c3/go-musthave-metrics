@@ -17,6 +17,7 @@ type AgentConfig struct {
 	Key            string
 	RateLimit      int
 	CryptoKey      string
+	GRPCAddress    string
 }
 
 type ServerConfig struct {
@@ -31,6 +32,7 @@ type ServerConfig struct {
 	AuditFile       string
 	AuditURL        string
 	TrustedSubnet   string
+	GRPCAddress     string
 }
 
 func NewAgentConfig() (*AgentConfig, error) {
@@ -43,6 +45,7 @@ func NewAgentConfig() (*AgentConfig, error) {
 	fs.StringP("key", "k", "", "hash key")
 	fs.IntP("rate-limit", "l", 1, "rate limit for outgoing requests")
 	fs.String("crypto-key", "", "path to public key file")
+	fs.StringP("grpc-address", "g", "", "gRPC server address; when set, metrics are sent over gRPC")
 	fs.StringP("config", "c", "", "path to JSON config file")
 	if err := fs.Parse(pflagArgs()); err != nil {
 		return nil, fmt.Errorf("parse agent flags: %w", err)
@@ -91,6 +94,12 @@ func NewAgentConfig() (*AgentConfig, error) {
 		addr = "http://" + addr
 	}
 
+	// JSON uses "grpc_address", flag uses "grpc-address".
+	grpcAddress := v.GetString("grpc-address")
+	if grpcAddress == "" {
+		grpcAddress = v.GetString("grpc_address")
+	}
+
 	return &AgentConfig{
 		Address:        addr,
 		PollInterval:   pollInterval,
@@ -98,6 +107,7 @@ func NewAgentConfig() (*AgentConfig, error) {
 		Key:            v.GetString("key"),
 		RateLimit:      v.GetInt("rate-limit"),
 		CryptoKey:      v.GetString("crypto-key"),
+		GRPCAddress:    grpcAddress,
 	}, nil
 }
 
@@ -116,6 +126,7 @@ func NewServerConfig() (*ServerConfig, error) {
 	fs.String("audit-file", "", "audit log file path")
 	fs.String("audit-url", "", "audit log remote URL")
 	fs.StringP("trusted-subnet", "t", "", "trusted subnet in CIDR notation")
+	fs.StringP("grpc-address", "g", "", "gRPC server listen address; when set, a gRPC server is started")
 	fs.StringP("config", "c", "", "path to JSON config file")
 	if err := fs.Parse(pflagArgs()); err != nil {
 		return nil, fmt.Errorf("parse server flags: %w", err)
@@ -174,6 +185,12 @@ func NewServerConfig() (*ServerConfig, error) {
 		trustedSubnet = v.GetString("trusted_subnet")
 	}
 
+	// JSON uses "grpc_address", flag uses "grpc-address".
+	grpcAddress := v.GetString("grpc-address")
+	if grpcAddress == "" {
+		grpcAddress = v.GetString("grpc_address")
+	}
+
 	return &ServerConfig{
 		Address:         v.GetString("address"),
 		LogLevel:        v.GetString("log-level"),
@@ -186,6 +203,7 @@ func NewServerConfig() (*ServerConfig, error) {
 		AuditFile:       v.GetString("audit-file"),
 		AuditURL:        v.GetString("audit-url"),
 		TrustedSubnet:   trustedSubnet,
+		GRPCAddress:     grpcAddress,
 	}, nil
 }
 

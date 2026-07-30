@@ -37,6 +37,7 @@ type Agent struct {
 	key            string
 	publicKey      *ecdh.PublicKey
 	realIP         string
+	grpcClient     *grpcClient
 	m              sync.Mutex
 }
 
@@ -77,6 +78,15 @@ func New(cfg config.AgentConfig) (*Agent, error) {
 		}
 		a.publicKey = pub
 		logger.Sugar.Infof("X25519 ECDH encryption enabled")
+	}
+
+	if cfg.GRPCAddress != "" {
+		gc, err := newGRPCClient(cfg.GRPCAddress, a.realIP)
+		if err != nil {
+			return nil, fmt.Errorf("init grpc client: %w", err)
+		}
+		a.grpcClient = gc
+		logger.Sugar.Infof("gRPC transport enabled, target=%s", cfg.GRPCAddress)
 	}
 
 	logger.Sugar.Infof("initializing agent, server=%s, poll=%ds, report=%ds", cfg.Address, cfg.PollInterval, cfg.ReportInterval)
@@ -154,6 +164,14 @@ func (a *Agent) BuildBatch() []models.Metrics {
 
 func (a *Agent) SendBatch(batch []models.Metrics) {
 	ctx := context.Background()
+
+	if a.grpcClient != nil {
+		if err := a.grpcClient.SendBatch(ctx, batch); err != nil {
+			logger.Sugar.Errorf("grpc send batch failed: %v", err)
+		}
+		return
+	}
+
 	if err := a.sendBatch(ctx, batch); err != nil {
 		logger.Sugar.Errorf("send batch failed, fallback to single: %v", err)
 		for _, m := range batch {
@@ -203,6 +221,9 @@ func (a *Agent) Run(ctx context.Context) {
 			}
 			close(jobs)
 			workerWg.Wait()
+			if a.grpcClient != nil {
+				a.grpcClient.Close()
+			}
 			logger.Sugar.Infof("agent stopped")
 			return
 		case <-pollTicker.C:

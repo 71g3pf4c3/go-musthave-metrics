@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"net"
 	"net/http"
 	"os/signal"
 	"syscall"
@@ -24,7 +25,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT, syscall.SIGQUIT)
 	defer stop()
 
-	srv, cleanup, err := newServer(ctx, cfg)
+	srv, grpcSrv, cleanup, err := newServer(ctx, cfg)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -35,6 +36,18 @@ func main() {
 			serverErr <- err
 		}
 	}()
+
+	if grpcSrv != nil {
+		lis, err := net.Listen("tcp", cfg.GRPCAddress)
+		if err != nil {
+			log.Fatal(err)
+		}
+		go func() {
+			if err := grpcSrv.Serve(lis); err != nil {
+				serverErr <- err
+			}
+		}()
+	}
 
 	// Wait for signal or server error.
 	select {
@@ -49,6 +62,10 @@ func main() {
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		logger.Sugar.Errorf("server shutdown error: %v", err)
+	}
+
+	if grpcSrv != nil {
+		grpcSrv.GracefulStop()
 	}
 
 	cleanup.Shutdown(shutdownCtx)

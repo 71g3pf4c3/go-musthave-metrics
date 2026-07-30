@@ -7,11 +7,15 @@ import (
 	"net/http"
 	"time"
 
+	"google.golang.org/grpc"
+
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/audit"
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/config"
 	servercrypto "github.com/71g3pf4c3/go-musthave-metrics/internal/crypto"
+	"github.com/71g3pf4c3/go-musthave-metrics/internal/grpcserver"
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/handlers"
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/logger"
+	pb "github.com/71g3pf4c3/go-musthave-metrics/internal/proto"
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/repository"
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/service"
 )
@@ -39,9 +43,9 @@ func (c *serverCleanup) Shutdown(ctx context.Context) {
 	c.notifier.Close()
 }
 
-func newServer(ctx context.Context, cfg *config.ServerConfig) (*http.Server, *serverCleanup, error) {
+func newServer(ctx context.Context, cfg *config.ServerConfig) (*http.Server, *grpc.Server, *serverCleanup, error) {
 	if err := logger.Initialize(cfg.LogLevel); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	var repo repository.Repository
@@ -51,7 +55,7 @@ func newServer(ctx context.Context, cfg *config.ServerConfig) (*http.Server, *se
 	if cfg.DatabaseDSN != "" {
 		pgStore, err := repository.NewPGStorage(cfg.DatabaseDSN)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		repo = pgStore
 	} else {
@@ -64,7 +68,7 @@ func newServer(ctx context.Context, cfg *config.ServerConfig) (*http.Server, *se
 	if cfg.AuditFile != "" {
 		fo, err := audit.NewFileObserver(cfg.AuditFile)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		auditObservers = append(auditObservers, fo)
 		logger.Sugar.Infof("audit file sink enabled: %s", cfg.AuditFile)
@@ -107,7 +111,7 @@ func newServer(ctx context.Context, cfg *config.ServerConfig) (*http.Server, *se
 		var err error
 		privKey, err = servercrypto.LoadPrivateKey(cfg.CryptoKey)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		logger.Sugar.Infof("X25519 ECDH decryption enabled")
 	}
@@ -116,13 +120,24 @@ func newServer(ctx context.Context, cfg *config.ServerConfig) (*http.Server, *se
 	if cfg.TrustedSubnet != "" {
 		_, subnet, err := net.ParseCIDR(cfg.TrustedSubnet)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		trustedSubnet = subnet
 		logger.Sugar.Infof("trusted subnet filtering enabled: %s", cfg.TrustedSubnet)
 	}
 
 	router := newRouter(h, cfg.Key, privKey, trustedSubnet)
+
+	var grpcSrv *grpc.Server
+	if cfg.GRPCAddress != "" {
+		var opts []grpc.ServerOption
+		if trustedSubnet != nil {
+			opts = append(opts, grpc.ChainUnaryInterceptor(grpcserver.TrustedSubnetInterceptor(trustedSubnet)))
+		}
+		grpcSrv = grpc.NewServer(opts...)
+		pb.RegisterMetricsServer(grpcSrv, grpcserver.New(svc))
+		logger.Sugar.Infof("gRPC server enabled on %s", cfg.GRPCAddress)
+	}
 
 	logger.Sugar.Infof("starting server on %s", cfg.Address)
 	return &http.Server{
@@ -131,5 +146,5 @@ func newServer(ctx context.Context, cfg *config.ServerConfig) (*http.Server, *se
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  120 * time.Second,
-	}, cleanup, nil
+	}, grpcSrv, cleanup, nil
 }
