@@ -30,6 +30,7 @@ type ServerConfig struct {
 	CryptoKey       string
 	AuditFile       string
 	AuditURL        string
+	TrustedSubnet   string
 }
 
 func NewAgentConfig() (*AgentConfig, error) {
@@ -114,6 +115,7 @@ func NewServerConfig() (*ServerConfig, error) {
 	fs.String("crypto-key", "", "path to private key file")
 	fs.String("audit-file", "", "audit log file path")
 	fs.String("audit-url", "", "audit log remote URL")
+	fs.StringP("trusted-subnet", "t", "", "trusted subnet in CIDR notation")
 	fs.StringP("config", "c", "", "path to JSON config file")
 	if err := fs.Parse(pflagArgs()); err != nil {
 		return nil, fmt.Errorf("parse server flags: %w", err)
@@ -166,6 +168,12 @@ func NewServerConfig() (*ServerConfig, error) {
 		cryptoKey = v.GetString("crypto_key")
 	}
 
+	// JSON uses "trusted_subnet", flag uses "trusted-subnet".
+	trustedSubnet := v.GetString("trusted-subnet")
+	if trustedSubnet == "" {
+		trustedSubnet = v.GetString("trusted_subnet")
+	}
+
 	return &ServerConfig{
 		Address:         v.GetString("address"),
 		LogLevel:        v.GetString("log-level"),
@@ -177,6 +185,7 @@ func NewServerConfig() (*ServerConfig, error) {
 		CryptoKey:       cryptoKey,
 		AuditFile:       v.GetString("audit-file"),
 		AuditURL:        v.GetString("audit-url"),
+		TrustedSubnet:   trustedSubnet,
 	}, nil
 }
 

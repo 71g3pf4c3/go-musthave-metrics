@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"maps"
 	"math/rand"
+	"net"
 	"net/http"
 	"runtime"
 	"sync"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/config"
 	agentcrypto "github.com/71g3pf4c3/go-musthave-metrics/internal/crypto"
+	"github.com/71g3pf4c3/go-musthave-metrics/internal/ipfilter"
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/logger"
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/models"
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/sign"
@@ -34,10 +36,22 @@ type Agent struct {
 	rateLimit      int
 	key            string
 	publicKey      *ecdh.PublicKey
+	realIP         string
 	m              sync.Mutex
 }
 
 var agentRetryDelays = []time.Duration{time.Second, 3 * time.Second, 5 * time.Second}
+
+// outboundIP determines the agent host's outbound IP address used to reach
+// external hosts. Falls back to loopback if it cannot be determined.
+func outboundIP() string {
+	conn, err := net.Dial("udp", "8.8.8.8:80")
+	if err != nil {
+		return "127.0.0.1"
+	}
+	defer conn.Close()
+	return conn.LocalAddr().(*net.UDPAddr).IP.String()
+}
 
 func New(cfg config.AgentConfig) (*Agent, error) {
 	rl := cfg.RateLimit
@@ -53,6 +67,7 @@ func New(cfg config.AgentConfig) (*Agent, error) {
 		reportInterval: cfg.ReportInterval,
 		rateLimit:      rl,
 		key:            cfg.Key,
+		realIP:         outboundIP(),
 	}
 
 	if cfg.CryptoKey != "" {
@@ -262,6 +277,7 @@ func (a *Agent) sendBatch(ctx context.Context, metrics []models.Metrics) error {
 			SetHeader("Content-Type", "application/json").
 			SetHeader("Content-Encoding", "gzip").
 			SetHeader("Accept-Encoding", "gzip").
+			SetHeader(ipfilter.HeaderRealIP, a.realIP).
 			SetBody(body)
 		if a.key != "" {
 			req.SetHeader(sign.HeaderHashSHA256, sign.ComputeHMAC(data, a.key))
@@ -322,6 +338,7 @@ func (a *Agent) sendMetric(ctx context.Context, metric models.Metrics) error {
 			SetHeader("Content-Type", "application/json").
 			SetHeader("Content-Encoding", "gzip").
 			SetHeader("Accept-Encoding", "gzip").
+			SetHeader(ipfilter.HeaderRealIP, a.realIP).
 			SetBody(body)
 		if a.key != "" {
 			req.SetHeader(sign.HeaderHashSHA256, sign.ComputeHMAC(data, a.key))

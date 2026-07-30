@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/ecdh"
+	"net"
 	"net/http"
 	"time"
 
@@ -111,7 +112,17 @@ func newServer(ctx context.Context, cfg *config.ServerConfig) (*http.Server, *se
 		logger.Sugar.Infof("X25519 ECDH decryption enabled")
 	}
 
-	router := newRouter(h, cfg.Key, privKey)
+	var trustedSubnet *net.IPNet
+	if cfg.TrustedSubnet != "" {
+		_, subnet, err := net.ParseCIDR(cfg.TrustedSubnet)
+		if err != nil {
+			return nil, nil, err
+		}
+		trustedSubnet = subnet
+		logger.Sugar.Infof("trusted subnet filtering enabled: %s", cfg.TrustedSubnet)
+	}
+
+	router := newRouter(h, cfg.Key, privKey, trustedSubnet)
 
 	logger.Sugar.Infof("starting server on %s", cfg.Address)
 	return &http.Server{
