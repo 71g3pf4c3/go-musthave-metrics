@@ -1,132 +1,197 @@
 package config
 
 import (
-	"flag"
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
-	"github.com/caarlos0/env/v11"
+	"github.com/spf13/pflag"
+	"github.com/spf13/viper"
 )
 
 type AgentConfig struct {
-	Address        string `env:"ADDRESS"`
-	PollInterval   int    `env:"POLL_INTERVAL"`
-	ReportInterval int    `env:"REPORT_INTERVAL"`
-	Key            string `env:"KEY"`
-	RateLimit      int    `env:"RATE_LIMIT"`
+	Address        string
+	PollInterval   int
+	ReportInterval int
+	Key            string
+	RateLimit      int
+	CryptoKey      string
 }
 
 type ServerConfig struct {
-	Address         string `env:"ADDRESS"`
-	LogLevel        string `env:"LOG_LEVEL"`
-	StoreInterval   int    `env:"STORE_INTERVAL"`
-	FileStoragePath string `env:"FILE_STORAGE_PATH"`
-	RestoreFlag     bool   `env:"RESTORE"`
-	DatabaseDSN     string `env:"DATABASE_DSN"`
-	Key             string `env:"KEY"`
-	AuditFile       string `env:"AUDIT_FILE"`
-	AuditURL        string `env:"AUDIT_URL"`
+	Address         string
+	LogLevel        string
+	StoreInterval   int
+	FileStoragePath string
+	RestoreFlag     bool
+	DatabaseDSN     string
+	Key             string
+	CryptoKey       string
+	AuditFile       string
+	AuditURL        string
 }
 
 func NewAgentConfig() (*AgentConfig, error) {
-	addressFlag := flag.String("a", "localhost:8080", "server endpoint address")
-	pollInterval := flag.Int("p", 2, "poll interval in seconds")
-	reportInterval := flag.Int("r", 10, "report interval in seconds")
-	keyFlag := flag.String("k", "", "hash key")
-	rateLimitFlag := flag.Int("l", 1, "rate limit for outgoing requests")
-	flag.Parse()
+	v := viper.New()
 
-	cfg := AgentConfig{
-		Address:        *addressFlag,
-		PollInterval:   *pollInterval,
-		ReportInterval: *reportInterval,
-		Key:            *keyFlag,
-		RateLimit:      *rateLimitFlag,
-	}
-
-	var envCfg AgentConfig
-	if err := env.Parse(&envCfg); err != nil {
-		return nil, fmt.Errorf("parse agent env config: %w", err)
-	}
-	if envCfg.Address != "" {
-		cfg.Address = envCfg.Address
-	}
-	if envCfg.PollInterval != 0 {
-		cfg.PollInterval = envCfg.PollInterval
-	}
-	if envCfg.ReportInterval != 0 {
-		cfg.ReportInterval = envCfg.ReportInterval
-	}
-	if envCfg.Key != "" {
-		cfg.Key = envCfg.Key
-	}
-	if envCfg.RateLimit != 0 {
-		cfg.RateLimit = envCfg.RateLimit
+	fs := pflag.NewFlagSet("agent", pflag.ContinueOnError)
+	fs.StringP("address", "a", "localhost:8080", "server endpoint address")
+	fs.IntP("poll-interval", "p", 2, "poll interval in seconds")
+	fs.IntP("report-interval", "r", 10, "report interval in seconds")
+	fs.StringP("key", "k", "", "hash key")
+	fs.IntP("rate-limit", "l", 1, "rate limit for outgoing requests")
+	fs.String("crypto-key", "", "path to public key file")
+	fs.StringP("config", "c", "", "path to JSON config file")
+	if err := fs.Parse(pflagArgs()); err != nil {
+		return nil, fmt.Errorf("parse agent flags: %w", err)
 	}
 
-	if !strings.HasPrefix(cfg.Address, "http://") && !strings.HasPrefix(cfg.Address, "https://") {
-		cfg.Address = "http://" + cfg.Address
+	if err := v.BindPFlags(fs); err != nil {
+		return nil, err
 	}
 
-	return &cfg, nil
+	// Env vars override.
+	v.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
+	v.AutomaticEnv()
+
+	// CONFIG env for config file path.
+	cfgPath := v.GetString("config")
+	if v.IsSet("CONFIG") {
+		cfgPath = v.GetString("CONFIG")
+	}
+	if cfgPath != "" {
+		v.SetConfigFile(cfgPath)
+		if err := v.MergeInConfig(); err != nil {
+			return nil, fmt.Errorf("read agent config file: %w", err)
+		}
+		// Re-bind flags so they override file values.
+		if err := v.BindPFlags(fs); err != nil {
+			return nil, err
+		}
+	}
+
+	// Handle duration fields from JSON (e.g. "1s" -> seconds int).
+	pollInterval := v.GetInt("poll-interval")
+	if pollInterval == 0 {
+		if s := v.GetString("poll_interval"); s != "" {
+			pollInterval = parseDurationSecondsOrDefault(s, 2)
+		}
+	}
+	reportInterval := v.GetInt("report-interval")
+	if reportInterval == 0 {
+		if s := v.GetString("report_interval"); s != "" {
+			reportInterval = parseDurationSecondsOrDefault(s, 10)
+		}
+	}
+
+	addr := v.GetString("address")
+	if !strings.HasPrefix(addr, "http://") && !strings.HasPrefix(addr, "https://") {
+		addr = "http://" + addr
+	}
+
+	return &AgentConfig{
+		Address:        addr,
+		PollInterval:   pollInterval,
+		ReportInterval: reportInterval,
+		Key:            v.GetString("key"),
+		RateLimit:      v.GetInt("rate-limit"),
+		CryptoKey:      v.GetString("crypto-key"),
+	}, nil
 }
 
 func NewServerConfig() (*ServerConfig, error) {
-	addressFlag := flag.String("a", "localhost:8080", "server listen address")
-	logLevel := flag.String("l", "info", "server log level")
-	storeInterval := flag.Int("i", 300, "store interval in seconds (0 for synchronous writes)")
-	fileStoragePath := flag.String("f", "", "file storage path")
-	restoreFlag := flag.Bool("r", true, "restore data from file on startup")
-	databaseDSN := flag.String("d", "", "database dsn")
-	keyFlag := flag.String("k", "", "hash key")
-	auditFileFlag := flag.String("audit-file", "", "audit log file path")
-	auditURLFlag := flag.String("audit-url", "", "audit log remote URL")
-	flag.Parse()
+	v := viper.New()
 
-	cfg := ServerConfig{
-		Address:         *addressFlag,
-		LogLevel:        *logLevel,
-		StoreInterval:   *storeInterval,
-		FileStoragePath: *fileStoragePath,
-		RestoreFlag:     *restoreFlag,
-		DatabaseDSN:     *databaseDSN,
-		Key:             *keyFlag,
-		AuditFile:       *auditFileFlag,
-		AuditURL:        *auditURLFlag,
+	fs := pflag.NewFlagSet("server", pflag.ContinueOnError)
+	fs.StringP("address", "a", "localhost:8080", "server listen address")
+	fs.StringP("log-level", "l", "info", "server log level")
+	fs.IntP("store-interval", "i", 300, "store interval in seconds")
+	fs.StringP("file-storage-path", "f", "", "file storage path")
+	fs.BoolP("restore", "r", true, "restore data from file on startup")
+	fs.StringP("database-dsn", "d", "", "database dsn")
+	fs.StringP("key", "k", "", "hash key")
+	fs.String("crypto-key", "", "path to private key file")
+	fs.String("audit-file", "", "audit log file path")
+	fs.String("audit-url", "", "audit log remote URL")
+	fs.StringP("config", "c", "", "path to JSON config file")
+	if err := fs.Parse(pflagArgs()); err != nil {
+		return nil, fmt.Errorf("parse server flags: %w", err)
 	}
 
-	var envCfg ServerConfig
-	if err := env.Parse(&envCfg); err != nil {
-		return nil, fmt.Errorf("parse server env config: %w", err)
-	}
-	if envCfg.Address != "" {
-		cfg.Address = envCfg.Address
-	}
-	if envCfg.LogLevel != "" {
-		cfg.LogLevel = envCfg.LogLevel
-	}
-	if envCfg.StoreInterval != 0 {
-		cfg.StoreInterval = envCfg.StoreInterval
-	}
-	if envCfg.DatabaseDSN != "" {
-		cfg.DatabaseDSN = envCfg.DatabaseDSN
-	}
-	if envCfg.Key != "" {
-		cfg.Key = envCfg.Key
-	}
-	if envCfg.FileStoragePath != "" {
-		cfg.FileStoragePath = envCfg.FileStoragePath
-	}
-	if os.Getenv("RESTORE") != "" {
-		cfg.RestoreFlag = envCfg.RestoreFlag
-	}
-	if envCfg.AuditFile != "" {
-		cfg.AuditFile = envCfg.AuditFile
-	}
-	if envCfg.AuditURL != "" {
-		cfg.AuditURL = envCfg.AuditURL
+	if err := v.BindPFlags(fs); err != nil {
+		return nil, err
 	}
 
-	return &cfg, nil
+	v.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
+	v.AutomaticEnv()
+
+	cfgPath := v.GetString("config")
+	if v.IsSet("CONFIG") {
+		cfgPath = v.GetString("CONFIG")
+	}
+	if cfgPath != "" {
+		v.SetConfigFile(cfgPath)
+		if err := v.MergeInConfig(); err != nil {
+			return nil, fmt.Errorf("read server config file: %w", err)
+		}
+		if err := v.BindPFlags(fs); err != nil {
+			return nil, err
+		}
+	}
+
+	// Handle duration field from JSON.
+	storeInterval := v.GetInt("store-interval")
+	if storeInterval == 0 {
+		if s := v.GetString("store_interval"); s != "" {
+			storeInterval = parseDurationSecondsOrDefault(s, 300)
+		}
+	}
+
+	// JSON uses "store_file", flag uses "file-storage-path".
+	fileStoragePath := v.GetString("file-storage-path")
+	if fileStoragePath == "" {
+		fileStoragePath = v.GetString("store_file")
+	}
+
+	// JSON uses "database_dsn", flag uses "database-dsn".
+	databaseDSN := v.GetString("database-dsn")
+	if databaseDSN == "" {
+		databaseDSN = v.GetString("database_dsn")
+	}
+
+	// JSON uses "crypto_key", flag uses "crypto-key".
+	cryptoKey := v.GetString("crypto-key")
+	if cryptoKey == "" {
+		cryptoKey = v.GetString("crypto_key")
+	}
+
+	return &ServerConfig{
+		Address:         v.GetString("address"),
+		LogLevel:        v.GetString("log-level"),
+		StoreInterval:   storeInterval,
+		FileStoragePath: fileStoragePath,
+		RestoreFlag:     v.GetBool("restore"),
+		DatabaseDSN:     databaseDSN,
+		Key:             v.GetString("key"),
+		CryptoKey:       cryptoKey,
+		AuditFile:       v.GetString("audit-file"),
+		AuditURL:        v.GetString("audit-url"),
+	}, nil
+}
+
+func parseDurationSecondsOrDefault(s string, def int) int {
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		return def
+	}
+	return int(d.Seconds())
+}
+
+// pflagArgs returns os.Args[1:] for pflag parsing.
+func pflagArgs() []string {
+	if len(os.Args) > 1 {
+		return os.Args[1:]
+	}
+	return nil
 }

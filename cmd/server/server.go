@@ -2,20 +2,45 @@ package main
 
 import (
 	"context"
+	"crypto/ecdh"
 	"net/http"
 	"time"
 
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/audit"
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/config"
+	servercrypto "github.com/71g3pf4c3/go-musthave-metrics/internal/crypto"
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/handlers"
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/logger"
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/repository"
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/service"
 )
 
-func newServer(ctx context.Context, cfg *config.ServerConfig) (*http.Server, error) {
+// serverCleanup holds resources that need cleanup on shutdown.
+type serverCleanup struct {
+	svc             *service.MetricsService
+	notifier        *audit.Notifier
+	dumpTicker      *time.Ticker
+	fileStoragePath string
+	needsDump       bool
+}
+
+// Shutdown performs graceful cleanup: stops ticker, dumps data, closes notifier.
+func (c *serverCleanup) Shutdown(ctx context.Context) {
+	if c.dumpTicker != nil {
+		c.dumpTicker.Stop()
+	}
+	if c.needsDump {
+		logger.Sugar.Infof("final dump to %s", c.fileStoragePath)
+		if err := c.svc.Dump(ctx, c.fileStoragePath); err != nil {
+			logger.Sugar.Errorf("final dump failed: %v", err)
+		}
+	}
+	c.notifier.Close()
+}
+
+func newServer(ctx context.Context, cfg *config.ServerConfig) (*http.Server, *serverCleanup, error) {
 	if err := logger.Initialize(cfg.LogLevel); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	var repo repository.Repository
@@ -25,7 +50,7 @@ func newServer(ctx context.Context, cfg *config.ServerConfig) (*http.Server, err
 	if cfg.DatabaseDSN != "" {
 		pgStore, err := repository.NewPGStorage(cfg.DatabaseDSN)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		repo = pgStore
 	} else {
@@ -38,7 +63,7 @@ func newServer(ctx context.Context, cfg *config.ServerConfig) (*http.Server, err
 	if cfg.AuditFile != "" {
 		fo, err := audit.NewFileObserver(cfg.AuditFile)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		auditObservers = append(auditObservers, fo)
 		logger.Sugar.Infof("audit file sink enabled: %s", cfg.AuditFile)
@@ -57,11 +82,18 @@ func newServer(ctx context.Context, cfg *config.ServerConfig) (*http.Server, err
 		}
 	}
 
+	cleanup := &serverCleanup{
+		svc:             svc,
+		notifier:        notifier,
+		fileStoragePath: cfg.FileStoragePath,
+		needsDump:       !useDBStorage && useFileStorage,
+	}
+
 	if !useDBStorage && useFileStorage && cfg.StoreInterval > 0 {
 		logger.Sugar.Infof("periodic dump enabled every %ds to %s", cfg.StoreInterval, cfg.FileStoragePath)
-		dumpTicker := time.NewTicker(time.Duration(cfg.StoreInterval) * time.Second)
+		cleanup.dumpTicker = time.NewTicker(time.Duration(cfg.StoreInterval) * time.Second)
 		go func() {
-			for range dumpTicker.C {
+			for range cleanup.dumpTicker.C {
 				if err := svc.Dump(ctx, cfg.FileStoragePath); err != nil {
 					logger.Sugar.Errorf("failed to dump data: %v", err)
 				}
@@ -69,7 +101,17 @@ func newServer(ctx context.Context, cfg *config.ServerConfig) (*http.Server, err
 		}()
 	}
 
-	router := newRouter(h, cfg.Key)
+	var privKey *ecdh.PrivateKey
+	if cfg.CryptoKey != "" {
+		var err error
+		privKey, err = servercrypto.LoadPrivateKey(cfg.CryptoKey)
+		if err != nil {
+			return nil, nil, err
+		}
+		logger.Sugar.Infof("X25519 ECDH decryption enabled")
+	}
+
+	router := newRouter(h, cfg.Key, privKey)
 
 	logger.Sugar.Infof("starting server on %s", cfg.Address)
 	return &http.Server{
@@ -78,5 +120,5 @@ func newServer(ctx context.Context, cfg *config.ServerConfig) (*http.Server, err
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  120 * time.Second,
-	}, nil
+	}, cleanup, nil
 }

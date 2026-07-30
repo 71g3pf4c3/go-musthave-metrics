@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/ecdh"
 	"encoding/json"
 	"fmt"
 	"maps"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/config"
+	agentcrypto "github.com/71g3pf4c3/go-musthave-metrics/internal/crypto"
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/logger"
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/models"
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/sign"
@@ -31,18 +33,19 @@ type Agent struct {
 	reportInterval int
 	rateLimit      int
 	key            string
+	publicKey      *ecdh.PublicKey
 	m              sync.Mutex
 }
 
 var agentRetryDelays = []time.Duration{time.Second, 3 * time.Second, 5 * time.Second}
 
-func New(cfg config.AgentConfig) *Agent {
+func New(cfg config.AgentConfig) (*Agent, error) {
 	rl := cfg.RateLimit
 	if rl <= 0 {
 		rl = 1
 	}
-	logger.Sugar.Infof("initializing agent, server=%s, poll=%ds, report=%ds", cfg.Address, cfg.PollInterval, cfg.ReportInterval)
-	return &Agent{
+
+	a := &Agent{
 		client:         resty.New(),
 		serverAddr:     cfg.Address,
 		gauges:         make(map[string]float64),
@@ -51,6 +54,18 @@ func New(cfg config.AgentConfig) *Agent {
 		rateLimit:      rl,
 		key:            cfg.Key,
 	}
+
+	if cfg.CryptoKey != "" {
+		pub, err := agentcrypto.LoadPublicKey(cfg.CryptoKey)
+		if err != nil {
+			return nil, fmt.Errorf("load public key: %w", err)
+		}
+		a.publicKey = pub
+		logger.Sugar.Infof("X25519 ECDH encryption enabled")
+	}
+
+	logger.Sugar.Infof("initializing agent, server=%s, poll=%ds, report=%ds", cfg.Address, cfg.PollInterval, cfg.ReportInterval)
+	return a, nil
 }
 
 func (a *Agent) Collect() {
@@ -140,12 +155,19 @@ func (a *Agent) worker(jobs <-chan []models.Metrics) {
 	}
 }
 
-func (a *Agent) Run() {
+func (a *Agent) Run(ctx context.Context) {
 	logger.Sugar.Infof("agent started, workers=%d", a.rateLimit)
+
+	var workerWg sync.WaitGroup
+	var collectWg sync.WaitGroup
 
 	jobs := make(chan []models.Metrics, a.rateLimit)
 	for i := 0; i < a.rateLimit; i++ {
-		go a.worker(jobs)
+		workerWg.Add(1)
+		go func() {
+			defer workerWg.Done()
+			a.worker(jobs)
+		}()
 	}
 
 	pollTicker := time.NewTicker(time.Duration(a.pollInterval) * time.Second)
@@ -155,9 +177,29 @@ func (a *Agent) Run() {
 
 	for {
 		select {
+		case <-ctx.Done():
+			logger.Sugar.Infof("agent shutting down, waiting for collectors...")
+			collectWg.Wait()
+
+			logger.Sugar.Infof("sending final batch...")
+			batch := a.BuildBatch()
+			if len(batch) > 0 {
+				a.SendBatch(batch)
+			}
+			close(jobs)
+			workerWg.Wait()
+			logger.Sugar.Infof("agent stopped")
+			return
 		case <-pollTicker.C:
-			go a.Collect()
-			go a.CollectExtra()
+			collectWg.Add(2)
+			go func() {
+				defer collectWg.Done()
+				a.Collect()
+			}()
+			go func() {
+				defer collectWg.Done()
+				a.CollectExtra()
+			}()
 		case <-reportTicker.C:
 			batch := a.BuildBatch()
 			if len(batch) > 0 {
@@ -201,6 +243,15 @@ func (a *Agent) sendBatch(ctx context.Context, metrics []models.Metrics) error {
 		return fmt.Errorf("gzip close batch: %w", err)
 	}
 
+	body := buf.Bytes()
+	if a.publicKey != nil {
+		enc, encErr := agentcrypto.Encrypt(a.publicKey, body)
+		if encErr != nil {
+			return fmt.Errorf("encrypt batch: %w", encErr)
+		}
+		body = enc
+	}
+
 	for attempt := 0; ; attempt++ {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -211,7 +262,7 @@ func (a *Agent) sendBatch(ctx context.Context, metrics []models.Metrics) error {
 			SetHeader("Content-Type", "application/json").
 			SetHeader("Content-Encoding", "gzip").
 			SetHeader("Accept-Encoding", "gzip").
-			SetBody(buf.Bytes())
+			SetBody(body)
 		if a.key != "" {
 			req.SetHeader(sign.HeaderHashSHA256, sign.ComputeHMAC(data, a.key))
 		}
@@ -252,6 +303,15 @@ func (a *Agent) sendMetric(ctx context.Context, metric models.Metrics) error {
 		return fmt.Errorf("gzip close: %w", err)
 	}
 
+	body := buf.Bytes()
+	if a.publicKey != nil {
+		enc, encErr := agentcrypto.Encrypt(a.publicKey, body)
+		if encErr != nil {
+			return fmt.Errorf("encrypt metric: %w", encErr)
+		}
+		body = enc
+	}
+
 	for attempt := 0; ; attempt++ {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -262,7 +322,7 @@ func (a *Agent) sendMetric(ctx context.Context, metric models.Metrics) error {
 			SetHeader("Content-Type", "application/json").
 			SetHeader("Content-Encoding", "gzip").
 			SetHeader("Accept-Encoding", "gzip").
-			SetBody(buf.Bytes())
+			SetBody(body)
 		if a.key != "" {
 			req.SetHeader(sign.HeaderHashSHA256, sign.ComputeHMAC(data, a.key))
 		}
