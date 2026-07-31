@@ -38,11 +38,12 @@ func main() {
 	}()
 
 	if grpcSrv != nil {
-		lis, err := net.Listen("tcp", cfg.GRPCAddress)
-		if err != nil {
-			log.Fatal(err)
-		}
 		go func() {
+			lis, err := net.Listen("tcp", cfg.GRPCAddress)
+			if err != nil {
+				serverErr <- err
+				return
+			}
 			if err := grpcSrv.Serve(lis); err != nil {
 				serverErr <- err
 			}
@@ -50,11 +51,12 @@ func main() {
 	}
 
 	// Wait for signal or server error.
+	var startupErr error
 	select {
 	case <-ctx.Done():
 		logger.Sugar.Infof("shutting down server...")
-	case err := <-serverErr:
-		log.Fatal(err)
+	case startupErr = <-serverErr:
+		logger.Sugar.Errorf("server error, shutting down: %v", startupErr)
 	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -71,4 +73,8 @@ func main() {
 	cleanup.Shutdown(shutdownCtx)
 
 	logger.Sugar.Infof("server stopped")
+
+	if startupErr != nil {
+		log.Fatal(startupErr)
+	}
 }

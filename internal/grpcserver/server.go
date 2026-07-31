@@ -4,6 +4,9 @@ package grpcserver
 import (
 	"context"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/models"
 	pb "github.com/71g3pf4c3/go-musthave-metrics/internal/proto"
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/service"
@@ -24,16 +27,9 @@ func New(svc service.Service) *MetricsServer {
 func (s *MetricsServer) UpdateMetrics(ctx context.Context, req *pb.UpdateMetricsRequest) (*pb.UpdateMetricsResponse, error) {
 	batch := make([]models.Metrics, 0, len(req.GetMetrics()))
 	for _, m := range req.GetMetrics() {
-		metric := models.Metrics{ID: m.GetId()}
-		switch m.GetType() {
-		case pb.Metric_COUNTER:
-			metric.MType = models.Counter
-			delta := m.GetDelta()
-			metric.Delta = &delta
-		default:
-			metric.MType = models.Gauge
-			value := m.GetValue()
-			metric.Value = &value
+		metric, err := pb.ToModel(m)
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
 		}
 		batch = append(batch, metric)
 	}

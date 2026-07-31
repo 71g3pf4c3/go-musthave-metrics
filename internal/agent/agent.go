@@ -51,7 +51,11 @@ func outboundIP() string {
 		return "127.0.0.1"
 	}
 	defer conn.Close()
-	return conn.LocalAddr().(*net.UDPAddr).IP.String()
+	addr, ok := conn.LocalAddr().(*net.UDPAddr)
+	if !ok {
+		return "127.0.0.1"
+	}
+	return addr.IP.String()
 }
 
 func New(cfg config.AgentConfig) (*Agent, error) {

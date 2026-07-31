@@ -37,18 +37,9 @@ func newGRPCClient(target, realIP string) (*grpcClient, error) {
 func (c *grpcClient) SendBatch(ctx context.Context, batch []models.Metrics) error {
 	metrics := make([]*pb.Metric, 0, len(batch))
 	for _, m := range batch {
-		pm := &pb.Metric{Id: m.ID}
-		switch m.MType {
-		case models.Counter:
-			pm.Type = pb.Metric_COUNTER
-			if m.Delta != nil {
-				pm.Delta = *m.Delta
-			}
-		default:
-			pm.Type = pb.Metric_GAUGE
-			if m.Value != nil {
-				pm.Value = *m.Value
-			}
+		pm, err := pb.FromModel(m)
+		if err != nil {
+			return err
 		}
 		metrics = append(metrics, pm)
 	}

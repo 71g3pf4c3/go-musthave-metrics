@@ -4,6 +4,9 @@ import (
 	"context"
 	"testing"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
 	pb "github.com/71g3pf4c3/go-musthave-metrics/internal/proto"
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/repository"
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/service"
@@ -38,5 +41,19 @@ func TestUpdateMetrics(t *testing.T) {
 	}
 	if got != "3.14" {
 		t.Errorf("gauge = %q, want 3.14", got)
+	}
+}
+
+func TestUpdateMetricsUnknownType(t *testing.T) {
+	svc := service.New(repository.NewMemStorage())
+	srv := New(svc)
+
+	req := &pb.UpdateMetricsRequest{Metrics: []*pb.Metric{
+		{Id: "bad", Type: pb.Metric_MType(99)},
+	}}
+
+	_, err := srv.UpdateMetrics(context.Background(), req)
+	if status.Code(err) != codes.InvalidArgument {
+		t.Errorf("got code %v, want InvalidArgument", status.Code(err))
 	}
 }
