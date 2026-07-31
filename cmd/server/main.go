@@ -2,10 +2,7 @@ package main
 
 import (
 	"context"
-	"errors"
 	"log"
-	"net"
-	"net/http"
 	"os/signal"
 	"syscall"
 	"time"
@@ -25,30 +22,13 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT, syscall.SIGQUIT)
 	defer stop()
 
-	srv, grpcSrv, cleanup, err := newServer(ctx, cfg)
+	app, err := newServer(ctx, cfg)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	serverErr := make(chan error, 1)
-	go func() {
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			serverErr <- err
-		}
-	}()
-
-	if grpcSrv != nil {
-		go func() {
-			lis, err := net.Listen("tcp", cfg.GRPCAddress)
-			if err != nil {
-				serverErr <- err
-				return
-			}
-			if err := grpcSrv.Serve(lis); err != nil {
-				serverErr <- err
-			}
-		}()
-	}
+	app.Run(serverErr)
 
 	// Wait for signal or server error.
 	var startupErr error
@@ -62,15 +42,7 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	if err := srv.Shutdown(shutdownCtx); err != nil {
-		logger.Sugar.Errorf("server shutdown error: %v", err)
-	}
-
-	if grpcSrv != nil {
-		grpcSrv.GracefulStop()
-	}
-
-	cleanup.Shutdown(shutdownCtx)
+	app.Shutdown(shutdownCtx)
 
 	logger.Sugar.Infof("server stopped")
 
