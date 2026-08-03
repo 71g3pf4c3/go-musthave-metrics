@@ -20,6 +20,9 @@
             gnumake
             git
             jq
+            protobuf
+            protoc-gen-go
+            protoc-gen-go-grpc
           ];
 
           shellHook = ''

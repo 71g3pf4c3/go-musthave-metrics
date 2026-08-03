@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"maps"
 	"math/rand"
+	"net"
 	"net/http"
 	"runtime"
 	"sync"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/config"
 	agentcrypto "github.com/71g3pf4c3/go-musthave-metrics/internal/crypto"
+	"github.com/71g3pf4c3/go-musthave-metrics/internal/ipfilter"
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/logger"
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/models"
 	"github.com/71g3pf4c3/go-musthave-metrics/internal/sign"
@@ -34,10 +36,27 @@ type Agent struct {
 	rateLimit      int
 	key            string
 	publicKey      *ecdh.PublicKey
+	realIP         string
+	grpcClient     *grpcClient
 	m              sync.Mutex
 }
 
 var agentRetryDelays = []time.Duration{time.Second, 3 * time.Second, 5 * time.Second}
+
+// outboundIP determines the agent host's outbound IP address used to reach
+// external hosts. Falls back to loopback if it cannot be determined.
+func outboundIP() string {
+	conn, err := net.Dial("udp", "8.8.8.8:80")
+	if err != nil {
+		return "127.0.0.1"
+	}
+	defer conn.Close()
+	addr, ok := conn.LocalAddr().(*net.UDPAddr)
+	if !ok {
+		return "127.0.0.1"
+	}
+	return addr.IP.String()
+}
 
 func New(cfg config.AgentConfig) (*Agent, error) {
 	rl := cfg.RateLimit
@@ -53,6 +72,7 @@ func New(cfg config.AgentConfig) (*Agent, error) {
 		reportInterval: cfg.ReportInterval,
 		rateLimit:      rl,
 		key:            cfg.Key,
+		realIP:         outboundIP(),
 	}
 
 	if cfg.CryptoKey != "" {
@@ -62,6 +82,15 @@ func New(cfg config.AgentConfig) (*Agent, error) {
 		}
 		a.publicKey = pub
 		logger.Sugar.Infof("X25519 ECDH encryption enabled")
+	}
+
+	if cfg.GRPCAddress != "" {
+		gc, err := newGRPCClient(cfg.GRPCAddress, a.realIP)
+		if err != nil {
+			return nil, fmt.Errorf("init grpc client: %w", err)
+		}
+		a.grpcClient = gc
+		logger.Sugar.Infof("gRPC transport enabled, target=%s", cfg.GRPCAddress)
 	}
 
 	logger.Sugar.Infof("initializing agent, server=%s, poll=%ds, report=%ds", cfg.Address, cfg.PollInterval, cfg.ReportInterval)
@@ -139,6 +168,14 @@ func (a *Agent) BuildBatch() []models.Metrics {
 
 func (a *Agent) SendBatch(batch []models.Metrics) {
 	ctx := context.Background()
+
+	if a.grpcClient != nil {
+		if err := a.grpcClient.SendBatch(ctx, batch); err != nil {
+			logger.Sugar.Errorf("grpc send batch failed: %v", err)
+		}
+		return
+	}
+
 	if err := a.sendBatch(ctx, batch); err != nil {
 		logger.Sugar.Errorf("send batch failed, fallback to single: %v", err)
 		for _, m := range batch {
@@ -188,6 +225,9 @@ func (a *Agent) Run(ctx context.Context) {
 			}
 			close(jobs)
 			workerWg.Wait()
+			if a.grpcClient != nil {
+				a.grpcClient.Close()
+			}
 			logger.Sugar.Infof("agent stopped")
 			return
 		case <-pollTicker.C:
@@ -262,6 +302,7 @@ func (a *Agent) sendBatch(ctx context.Context, metrics []models.Metrics) error {
 			SetHeader("Content-Type", "application/json").
 			SetHeader("Content-Encoding", "gzip").
 			SetHeader("Accept-Encoding", "gzip").
+			SetHeader(ipfilter.HeaderRealIP, a.realIP).
 			SetBody(body)
 		if a.key != "" {
 			req.SetHeader(sign.HeaderHashSHA256, sign.ComputeHMAC(data, a.key))
@@ -322,6 +363,7 @@ func (a *Agent) sendMetric(ctx context.Context, metric models.Metrics) error {
 			SetHeader("Content-Type", "application/json").
 			SetHeader("Content-Encoding", "gzip").
 			SetHeader("Accept-Encoding", "gzip").
+			SetHeader(ipfilter.HeaderRealIP, a.realIP).
 			SetBody(body)
 		if a.key != "" {
 			req.SetHeader(sign.HeaderHashSHA256, sign.ComputeHMAC(data, a.key))

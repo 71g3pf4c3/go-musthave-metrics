@@ -12,11 +12,11 @@ import (
 func newTestServer(t *testing.T) http.Handler {
 	t.Helper()
 	cfg := &config.ServerConfig{Address: "localhost:0"}
-	srv, _, err := newServer(context.Background(), cfg)
+	app, err := newServer(context.Background(), cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return srv.Handler
+	return app.http.Handler
 }
 
 func TestAddGaugeMetric(t *testing.T) {
